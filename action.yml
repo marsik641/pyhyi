@@ -1,0 +1,17 @@
+name: pyhyi
+description: Check the hygiene of a Git repository
+inputs:
+  path:
+    description: Path inside the checked-out repository
+    default: "."
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@v10
+      with:
+        enable-cache: false
+    - name: Run pyhyi
+      shell: bash
+      env:
+        PROJECT_PATH: ${{ inputs.path }}
+      run: uvx --isolated --from "$GITHUB_ACTION_PATH" pyhyi check -- "$PROJECT_PATH"

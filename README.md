@@ -53,6 +53,31 @@ Run `pyhyi fix --dry-run` to preview each file, line and destination. Run
 unambiguous Git renames, preserving titles, queries and fragments. It
 respects the check's configured selection, ignores, suppressions and baseline.
 
+### pre-commit and GitHub Actions (on main)
+
+Add both hooks to `.pre-commit-config.yaml`. Set `rev` to a commit containing
+the hooks. Install them with `pre-commit install -t pre-commit -t commit-msg`.
+
+```yaml
+repos:
+  - repo: https://github.com/marsik641/pyhyi
+    rev: <commit-sha>
+    hooks:
+      - id: pyhyi
+      - id: pyhyi-commit-msg
+```
+
+In a GitHub Actions job, check out the consumer repository with history and
+run the action from the pyhyi revision you want to use:
+
+```yaml
+steps:
+  - uses: actions/checkout@v7
+    with:
+      fetch-depth: 0
+  - uses: marsik641/pyhyi@<commit-sha>
+```
+
 ### Run with pytest
 
 Install the pytest extra in your project's test environment:

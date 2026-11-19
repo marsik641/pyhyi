@@ -13,10 +13,12 @@ from pyhyi.errors import GitError
 _BASE = ("git", "-c", "core.quotepath=false", "-c", "i18n.logOutputEncoding=utf-8")
 
 
-def run_git(args: list[str], cwd: Path) -> str:
+def run_git(args: list[str], cwd: Path, *, stdin: bytes | None = None) -> str:
     """Run git and return stdout decoded as UTF-8."""
     try:
-        proc = subprocess.run([*_BASE, *args], cwd=cwd, capture_output=True, check=False)
+        proc = subprocess.run(
+            [*_BASE, *args], cwd=cwd, input=stdin, capture_output=True, check=False
+        )
     except FileNotFoundError as exc:
         raise GitError("git executable not found on PATH") from exc
     if proc.returncode != 0:

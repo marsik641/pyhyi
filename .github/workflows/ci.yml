@@ -29,6 +29,27 @@ jobs:
       - run: python3 scripts/build_aliases.py --out-dir dist
       - run: ls -R dist
 
+  integrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./
+      - name: Exercise both hooks in a consumer repository
+        shell: bash
+        run: |
+          cd "$(mktemp -d)"
+          git init -q
+          git -c user.name=Tester -c user.email=test@example.invalid commit --allow-empty -qm 'test: consumer'
+          uvx pre-commit try-repo "$GITHUB_WORKSPACE" pyhyi --all-files
+          printf 'feat: sample\n' > .git/COMMIT_EDITMSG
+          uvx pre-commit try-repo "$GITHUB_WORKSPACE" pyhyi-commit-msg --hook-stage commit-msg --commit-msg-filename .git/COMMIT_EDITMSG
+          printf 'invalid\n' > .git/COMMIT_EDITMSG
+          if uvx pre-commit try-repo "$GITHUB_WORKSPACE" pyhyi-commit-msg --hook-stage commit-msg --commit-msg-filename .git/COMMIT_EDITMSG; then
+            exit 1
+          fi
+
   test:
     strategy:
       fail-fast: false

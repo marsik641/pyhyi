@@ -1,0 +1,12 @@
+- id: pyhyi
+  name: Check repository hygiene
+  entry: pyhyi check
+  language: python
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit]
+- id: pyhyi-commit-msg
+  name: Check the proposed commit subject
+  entry: pyhyi commit-msg
+  language: python
+  stages: [commit-msg]

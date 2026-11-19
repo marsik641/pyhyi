@@ -60,6 +60,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_path(fix)
     fix.add_argument("--dry-run", action="store_true", help="preview changes")
 
+    message = sub.add_parser("commit-msg", help="check a proposed Git commit message")
+    message.add_argument("message_file", type=Path)
     sub.add_parser("rules", help="list available rules")
     return parser
 
@@ -119,6 +121,30 @@ def cmd_fix(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_commit_msg(args: argparse.Namespace) -> int:
+    from pyhyi.rules import resolve_options
+    from pyhyi.rules.commits import CommitConvention, subject_problem
+
+    root, config = _open_repo(".")
+    registry = load_rules()
+    engine.validate_config(config, registry)
+    if CommitConvention not in engine.select_rules(registry, config):
+        return EXIT_OK
+    merge_head = git.run_git(["rev-parse", "--git-path", "MERGE_HEAD"], root).strip()
+    if (root / merge_head).is_file():
+        return EXIT_OK
+    message = git.run_git(
+        ["stripspace", "--strip-comments"], root, stdin=args.message_file.read_bytes()
+    )
+    subject = message.partition("\n")[0]
+    options = resolve_options(CommitConvention, config)
+    problem = subject_problem(subject, tuple(options["types"]))
+    if problem:
+        print(f"commit-convention: proposed subject {problem}: {subject!r}", file=sys.stderr)
+        return EXIT_ISSUES
+    return EXIT_OK
+
+
 def cmd_rules(args: argparse.Namespace) -> int:
     registry = load_rules()
     width = max(len(rule_id) for rule_id in registry)
@@ -130,6 +156,7 @@ def cmd_rules(args: argparse.Namespace) -> int:
 
 COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "check": cmd_check,
+    "commit-msg": cmd_commit_msg,
     "fix": cmd_fix,
     "baseline": cmd_baseline,
     "rules": cmd_rules,
