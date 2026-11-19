@@ -7,7 +7,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: astral-sh/setup-uv@v10
+    - uses: astral-sh/setup-uv@v10.3.3
       with:
         enable-cache: false
     - name: Run pyhyi
