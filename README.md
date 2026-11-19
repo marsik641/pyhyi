@@ -4,7 +4,7 @@ Repository hygiene checker. It catches the mess that autonomous coding agents
 (and hurried humans) leave behind: dump folders, stale docs, broken doc links,
 forgotten TODOs, junk in the repo root, commits that ignore the convention.
 
-> Status: pre-alpha. Five rules so far; more are coming.
+> Status: pre-alpha. Five default checks. The main branch also has three opt-in review rules.
 
 ## Idea
 
@@ -14,8 +14,8 @@ explicit, checkable rules, so a tool slaps the agent's hands instead of a human.
 
 - **Language-agnostic core** — git history, file layout, text references between
   files. Works on any repository, not only Python ones.
-- **Thin language adapters** (planned) — precise dependency graphs where needed,
-  built on existing tools rather than custom parsers.
+- **Language adapters** — Python imports and literal JS/TypeScript module paths
+  provide evidence that a local file has a consumer.
 - **Precision over recall** — every finding should be worth reading. Suppressions
   require a reason; a baseline lets legacy repositories adopt it gradually.
 - **Agent-friendly output** — JSON reports an agent can act on directly.
@@ -104,7 +104,7 @@ entry therefore says nothing about whether a file is safe to delete.
 
 ## Rules
 
-All rules are enabled by default; `pyhyi rules` lists them.
+The five checks below are enabled by default. Run `pyhyi rules` to see all available rules.
 
 | Rule | What it reports | Options |
 | --- | --- | --- |
@@ -115,6 +115,23 @@ All rules are enabled by default; `pyhyi rules` lists them.
 | `bad-suppression` | Inline suppressions without a reason or naming unknown rules. | — |
 
 On an existing repository, start with `pyhyi baseline` so that only new issues fail.
+
+### Cleanup candidates (on main)
+
+Run `pyhyi check --select dump-folder,stale-doc,orphan-file` to get a review
+list. These opt-in rules report their evidence and leave the exit status
+successful. They use committed history and skip shallow clones.
+
+| Rule | Why a candidate appears | Options |
+| --- | --- | --- |
+| `dump-folder` | A directory accumulates numbered dump, export, report or snapshot files, each changed once, across several commits. A detected reference to the directory or its contents clears the candidate. | `min-files` (5), `min-commits` (3) |
+| `stale-doc` | A source file linked by a Markdown document changed repeatedly after the document's last committed edit. | `min-days` (30), `min-commits` (3) |
+| `orphan-file` | An old Python or JS/TS module has a scratch, backup, obsolete or unused name and no detected local consumer. | `min-days` (30) |
+
+The reference scan uses Python's AST, literal JS/TS paths, Markdown links
+and manifest strings. Dynamic imports and external callers need human review.
+With these rules enabled in configuration, `pytest --pyhyi` removes orphan
+and dump candidates observed during that run from its final report.
 
 ## Configuration
 

@@ -138,6 +138,27 @@ def blame_author_times(root: Path, path: str) -> dict[int, int]:
     return times
 
 
+def file_history(root: Path) -> dict[str, list[tuple[str, int]]]:
+    """Commit IDs and timestamps per path, with no guesses across renames or shallow boundaries."""
+    if (
+        not has_commits(root)
+        or run_git(["rev-parse", "--is-shallow-repository"], root).strip() == "true"
+    ):
+        return {}
+    raw = run_git(
+        ["log", "--format=%x00%H %ct", "--name-only", "-z", "--no-renames", "--no-merges"],
+        root,
+    )
+    records = re.split(r"(?:^|\0)\0([a-f0-9]{40,64}) ([0-9]+)\0", raw)[1:]
+    history: dict[str, list[tuple[str, int]]] = {}
+    for i in range(0, len(records), 3):
+        sha, stamp, paths = records[i : i + 3]
+        for path in paths.removeprefix("\n").split("\0"):
+            if path:
+                history.setdefault(path, []).append((sha, int(stamp)))
+    return history
+
+
 def renames(root: Path) -> dict[str, str]:
     """Map every path git saw renamed to the path it was finally renamed to."""
     if not has_commits(root):

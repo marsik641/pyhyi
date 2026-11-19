@@ -17,7 +17,7 @@ from pyhyi import baseline
 from pyhyi.config import Config
 from pyhyi.context import Context
 from pyhyi.errors import ConfigError
-from pyhyi.findings import Finding
+from pyhyi.findings import Finding, Severity
 from pyhyi.paths import PathMatcher
 from pyhyi.rules import Rule, resolve_options
 
@@ -41,11 +41,16 @@ class Result:
     errors: list[RuleError] = field(default_factory=list)
     rules: tuple[str, ...] = ()
 
+    @property
+    def blocking(self) -> bool:
+        return any(f.severity != Severity.ADVICE for f in self.findings)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "findings": [f.to_dict() for f in self.findings],
             "summary": {
-                "issues": len(self.findings),
+                "issues": sum(f.severity != Severity.ADVICE for f in self.findings),
+                "advice": sum(f.severity == Severity.ADVICE for f in self.findings),
                 "suppressed": len(self.suppressed),
                 "baselined": len(self.baselined),
                 "stale_baseline": self.stale_baseline,

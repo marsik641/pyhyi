@@ -96,7 +96,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     _print_errors(result)
     if result.errors:
         return EXIT_ERROR
-    return EXIT_ISSUES if result.findings else EXIT_OK
+    return EXIT_ISSUES if result.blocking else EXIT_OK
 
 
 def cmd_baseline(args: argparse.Namespace) -> int:

@@ -109,6 +109,22 @@ class Context:
         """Commits reachable from HEAD, newest first."""
         return tuple(git.log(self.root))
 
+    @cached_property
+    def file_history(self) -> dict[str, list[tuple[str, int]]]:
+        return git.file_history(self.root)
+
+    @cached_property
+    def referenced(self) -> set[str]:
+        from pyhyi.references import referenced_paths
+
+        return referenced_paths(self)
+
+    @cached_property
+    def changed(self) -> set[str]:
+        if not git.has_commits(self.root):
+            return set()
+        return set(git.run_git(["diff", "--name-only", "-z", "HEAD", "--"], self.root).split("\0"))
+
     def blame_times(self, path: str) -> dict[int, int]:
         """Author time of each committed line; empty for untracked files."""
         if path not in self._blame:

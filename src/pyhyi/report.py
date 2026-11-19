@@ -6,6 +6,7 @@ import json
 
 from pyhyi import __version__
 from pyhyi.engine import Result
+from pyhyi.findings import Severity
 
 JSON_FORMAT_VERSION = 1
 
@@ -15,9 +16,12 @@ def _plural(n: int, word: str) -> str:
 
 
 def summary(result: Result) -> str:
-    n = len(result.findings)
+    advice = sum(f.severity == Severity.ADVICE for f in result.findings)
+    n = len(result.findings) - advice
     head = "No issues found." if n == 0 else f"Found {_plural(n, 'issue')}."
     extras = []
+    if advice:
+        extras.append(f"{advice} for review")
     if result.baselined:
         extras.append(f"{len(result.baselined)} baselined")
     if result.suppressed:

@@ -13,6 +13,8 @@ import pytest
 if TYPE_CHECKING:
     from _pytest.terminal import TerminalReporter
 
+    from pyhyi.engine import Result
+
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.getgroup("pyhyi").addoption(
@@ -57,7 +59,7 @@ def _open_listeners() -> list[Callable[[str], None]]:
 class _SessionCheck:
     def __init__(self) -> None:
         self.status = pytest.ExitCode.OK
-        self.report = ""
+        self.result: Result | None = None
         self.opened: set[str] = set()
         self.unsubscribe: Callable[[], None] | None = None
 
@@ -68,7 +70,6 @@ class _SessionCheck:
         from pyhyi.context import Context
         from pyhyi.errors import PyhyiError
         from pyhyi.registry import load_rules
-        from pyhyi.report import render_text
 
         try:
             root = git.find_root(session.config.rootpath)
@@ -76,12 +77,10 @@ class _SessionCheck:
             paths = Context(root, config).files
             if not hasattr(session.config, "workerinput"):
                 result = engine.run(root, config, load_rules())
-                self.report = render_text(result)
+                self.result = result
                 if result.errors:
                     self.status = pytest.ExitCode.INTERNAL_ERROR
-                    for error in result.errors:
-                        self.report += f"Rule {error.rule} crashed:\n{error.traceback}\n"
-                elif result.findings:
+                elif result.blocking:
                     self.status = pytest.ExitCode.TESTS_FAILED
         except (PyhyiError, OSError) as exc:
             raise pytest.UsageError(f"pyhyi: {exc}") from exc
@@ -118,9 +117,25 @@ class _SessionCheck:
         self.opened.update(getattr(node, "workeroutput", {}).get("pyhyi_opened", ()))
 
     def pytest_terminal_summary(self, terminalreporter: TerminalReporter) -> None:
+        from pyhyi.report import render_text
+
         terminalreporter.write_sep("=", "pyhyi")
-        for line in self.report.splitlines():
-            terminalreporter.write_line(line)
+        if self.result is not None:
+            # A recorded open supplies positive evidence for review candidates.
+            self.result.findings = [
+                f
+                for f in self.result.findings
+                if not (f.rule == "orphan-file" and f.path in self.opened)
+                and not (
+                    f.rule == "dump-folder"
+                    and f.path
+                    and any(p.startswith(f.path + "/") for p in self.opened)
+                )
+            ]
+            for line in render_text(self.result).splitlines():
+                terminalreporter.write_line(line)
+            for error in self.result.errors:
+                terminalreporter.write_line(f"Rule {error.rule} crashed:\n{error.traceback}")
         terminalreporter.write_line(f"Repository files with Python open events: {len(self.opened)}")
         for path in sorted(self.opened):
             terminalreporter.write_line(f"  {path}")

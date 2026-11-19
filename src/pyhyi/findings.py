@@ -10,6 +10,7 @@ from typing import Any
 class Severity(str, Enum):
     ERROR = "error"
     WARNING = "warning"
+    ADVICE = "advice"
 
 
 @dataclass(frozen=True)

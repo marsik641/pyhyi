@@ -9,6 +9,7 @@ from pyhyi.rules import Rule, validate_rule_class
 from pyhyi.rules.commits import CommitConvention
 from pyhyi.rules.layout import RootClutter
 from pyhyi.rules.links import BrokenDocLink
+from pyhyi.rules.review import DumpFolder, OrphanFile, StaleDoc
 from pyhyi.rules.suppression import BadSuppression
 from pyhyi.rules.todos import StaleTodo
 
@@ -20,6 +21,9 @@ BUILTIN_RULES: tuple[type[Rule], ...] = (
     CommitConvention,
     RootClutter,
     StaleTodo,
+    DumpFolder,
+    OrphanFile,
+    StaleDoc,
 )
 
 
