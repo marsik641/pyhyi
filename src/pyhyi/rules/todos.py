@@ -7,7 +7,7 @@ import time
 from collections.abc import Iterator, Mapping
 from typing import Any, ClassVar
 
-from pyhyi.comments import comment_text
+from pyhyi.comments import iter_comments
 from pyhyi.context import Context
 from pyhyi.errors import ConfigError
 from pyhyi.findings import Finding
@@ -40,11 +40,11 @@ class StaleTodo(Rule):
         max_age = self.options["max-age-days"]
         now = time.time()
         for path in ctx.files:
+            source = ctx.read_text(path)
+            if not source or not any(marker in source for marker in self.options["markers"]):
+                continue
             hits = []
-            for number, line in enumerate(ctx.lines(path), start=1):
-                text = comment_text(line, path)
-                if text is None:
-                    continue
+            for number, line, text in iter_comments(source, path):
                 m = self._marker.match(text)
                 if m:
                     hits.append((number, m[1], line.strip()))
