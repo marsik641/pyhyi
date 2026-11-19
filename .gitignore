@@ -1,0 +1,23 @@
+# Private, never published: transcripts, notes, local experiments.
+/private/
+
+# Agent instructions and agent tooling stay local.
+/AGENTS.md
+/CLAUDE.md
+.claude/
+.codex/
+.agents/
+.skills/
+.cursor/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
