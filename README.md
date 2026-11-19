@@ -22,12 +22,10 @@ explicit, checkable rules, so a tool slaps the agent's hands instead of a human.
 
 ## Install
 
-Not on PyPI yet. Install from git by tag:
-
 ```sh
-pip install "git+https://github.com/marsik641/pyhyi@v0.0.1"
+pip install pyhyi
 # or run without installing
-uvx --from "git+https://github.com/marsik641/pyhyi@v0.0.1" pyhyi check
+uvx pyhyi check
 ```
 
 Requires Python 3.10+ and `git` on `PATH`.
@@ -143,6 +141,8 @@ uv run ruff check .
 uv run ruff format --check .
 uv run pyhyi check
 ```
+
+Releases are described in [docs/releasing.md](https://github.com/marsik641/pyhyi/blob/main/docs/releasing.md).
 
 ## License
 
