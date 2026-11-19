@@ -34,13 +34,16 @@ def find_root(start: Path) -> Path:
     return Path(out.strip())
 
 
-def list_files(root: Path) -> list[str]:
+def list_files(root: Path, *, tracked_only: bool = False) -> list[str]:
     """Tracked files plus untracked files that are not ignored.
 
     Untracked files are included so that junk is caught before it is
     committed. Files deleted from disk but still in the index are skipped.
     """
-    out = run_git(["ls-files", "-z", "--cached", "--others", "--exclude-standard"], cwd=root)
+    args = ["ls-files", "-z", "--cached"]
+    if not tracked_only:
+        args.extend(["--others", "--exclude-standard"])
+    out = run_git(args, cwd=root)
     paths = dict.fromkeys(p for p in out.split("\0") if p)
     return sorted(p for p in paths if (root / p).is_file())
 
