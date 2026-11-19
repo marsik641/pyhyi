@@ -247,6 +247,21 @@ def test_broken_doc_link_rule(repo: GitRepo) -> None:
     assert "not tracked by git" in ignored.message
 
 
+def test_link_lookalikes_do_not_report_broken_targets(repo: GitRepo) -> None:
+    repo.commit(
+        "docs: show link syntax",
+        {
+            "README.md": (
+                "<!-- [draft](absent.md) -->\n\n"
+                "`An example spans\n[example](absent.md)`\n\n"
+                "A stray bracket ](absent.md) precedes [a real link](absent.md).\n"
+            )
+        },
+    )
+    result = run_rule(repo, "broken-doc-link")
+    assert [(f.line, f.key) for f in result.findings] == [(6, "absent.md")]
+
+
 def test_link_target_must_be_in_the_index(repo: GitRepo) -> None:
     repo.commit("docs: add links", {"README.md": "[file](docs/local.md)\n[dir](docs/)\n"})
     repo.write("docs/local.md", "draft")

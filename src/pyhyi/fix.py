@@ -8,59 +8,14 @@ import re
 import shutil
 import tempfile
 from collections import Counter, defaultdict
-from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import quote
-
-from markdown_it import MarkdownIt
-from markdown_it.tree import SyntaxTreeNode
 
 from pyhyi import engine
 from pyhyi.config import Config
 from pyhyi.context import Context
 from pyhyi.errors import PyhyiError
-from pyhyi.rules.links import BrokenDocLink, Destination, LinkIndex, destinations, local_path
-
-
-class _HTMLTargets(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self.urls: set[str] = set()
-
-    def handle_starttag(self, tag, attrs):
-        if tag in {"a", "img", "source"}:
-            self.urls.update(v for k, v in attrs if k in {"src", "href"} and v)
-
-
-def _verified(text: str, candidates: list[Destination]) -> list[Destination]:
-    # Let CommonMark verify source positions in one parse. Lookalikes in prose,
-    # comments, titles and multiline code spans never become URL attributes.
-    prefix = "pyhyi-probe-"
-    while prefix in text:
-        prefix += "x"
-    parts = []
-    last = 0
-    probes = {}
-    for dest in sorted(candidates, key=lambda d: d.start):
-        if dest.start < last:
-            continue
-        marker = f"{prefix}{dest.start}"
-        probes[marker] = dest
-        parts.extend((text[last : dest.start], marker))
-        last = dest.end
-    parts.append(text[last:])
-    env: dict = {}
-    tree = SyntaxTreeNode(MarkdownIt("commonmark").parse("".join(parts), env))
-    found = {ref["href"] for ref in env.get("references", {}).values()}
-    for node in tree.walk():
-        if node.type in {"link", "image"}:
-            attr = "href" if node.type == "link" else "src"
-            found.add(str(node.attrs.get(attr, "")))
-        if node.type in {"html_inline", "html_block"}:
-            parser = _HTMLTargets()
-            parser.feed(node.content)
-            found.update(parser.urls)
-    return [dest for marker, dest in probes.items() if marker in found]
+from pyhyi.rules.links import BrokenDocLink, LinkIndex, destinations, local_path
 
 
 def _replace_file(path: Path, original: bytes, replacement: bytes) -> None:
@@ -104,7 +59,7 @@ def fix_links(root: Path, config: Config, registry: engine.Registry, *, dry_run:
             elif (dest.line, dest.target) in keys:
                 candidates.append(dest)
         edits = []
-        for dest in _verified(text, candidates):
+        for dest in candidates:
             raw = text[dest.start : dest.end]
             resolved = local_path(dest.target, source)
             if raw != dest.target or resolved is None or resolved in index.tracked:

@@ -7,10 +7,12 @@ import re
 from collections import defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from urllib.parse import unquote
 
 from markdown_it import MarkdownIt
 from markdown_it.helpers import parseLinkDestination
+from markdown_it.tree import SyntaxTreeNode
 
 from pyhyi import git
 from pyhyi.context import Context
@@ -35,7 +37,7 @@ class Destination:
     target: str
 
 
-def destinations(text: str) -> Iterator[Destination]:
+def _candidates(text: str) -> Iterator[Destination]:
     """Source spans of candidate destinations, excluding fenced and inline code."""
     code_lines = {
         i
@@ -63,6 +65,53 @@ def destinations(text: str) -> Iterator[Destination]:
                     yield Destination(
                         index, base + match.start(group), base + match.end(group), match[group]
                     )
+
+
+class _HTMLTargets(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.urls: set[str] = set()
+
+    def handle_starttag(self, tag, attrs):
+        if tag in {"a", "img", "source"}:
+            self.urls.update(v for k, v in attrs if k in {"src", "href"} and v)
+
+
+def destinations(text: str) -> Iterator[Destination]:
+    """Yield source spans that CommonMark actually interprets as destinations."""
+    candidates = sorted(_candidates(text), key=lambda dest: dest.start)
+    if not candidates:
+        return
+    # Let CommonMark verify source positions in one parse. Lookalikes in prose,
+    # comments, titles and multiline code spans never become URL attributes.
+    prefix = "pyhyi-probe-"
+    while prefix in text:
+        prefix += "x"
+    parts = []
+    last = 0
+    probes = {}
+    for dest in candidates:
+        if dest.start < last:
+            continue
+        marker = f"{prefix}{dest.start}"
+        probes[marker] = dest
+        parts.extend((text[last : dest.start], marker))
+        last = dest.end
+    parts.append(text[last:])
+    env: dict = {}
+    tree = SyntaxTreeNode(MarkdownIt("commonmark").parse("".join(parts), env))
+    found = {ref["href"] for ref in env.get("references", {}).values()}
+    for node in tree.walk():
+        if node.type in {"link", "image"}:
+            attr = "href" if node.type == "link" else "src"
+            found.add(str(node.attrs.get(attr, "")))
+        if node.type in {"html_inline", "html_block"} and prefix in node.content:
+            parser = _HTMLTargets()
+            parser.feed(node.content)
+            found.update(parser.urls)
+    for marker, dest in probes.items():
+        if marker in found:
+            yield dest
 
 
 def link_targets(text: str) -> Iterator[tuple[int, str]]:
