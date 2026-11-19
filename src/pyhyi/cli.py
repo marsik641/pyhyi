@@ -56,6 +56,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_path(base)
 
+    fix = sub.add_parser("fix", help="repair unambiguous Markdown links")
+    _add_path(fix)
+    fix.add_argument("--dry-run", action="store_true", help="preview changes")
+
     sub.add_parser("rules", help="list available rules")
     return parser
 
@@ -106,6 +110,15 @@ def cmd_baseline(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_fix(args: argparse.Namespace) -> int:
+    from pyhyi.fix import fix_links
+
+    root, config = _open_repo(args.path)
+    count = fix_links(root, config, load_rules(), dry_run=args.dry_run)
+    print(f"{count} link edit(s) {'available' if args.dry_run else 'applied'}.")
+    return EXIT_OK
+
+
 def cmd_rules(args: argparse.Namespace) -> int:
     registry = load_rules()
     width = max(len(rule_id) for rule_id in registry)
@@ -117,6 +130,7 @@ def cmd_rules(args: argparse.Namespace) -> int:
 
 COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "check": cmd_check,
+    "fix": cmd_fix,
     "baseline": cmd_baseline,
     "rules": cmd_rules,
 }
@@ -140,6 +154,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_OK
     try:
         return COMMANDS[args.command](args)
-    except PyhyiError as exc:
+    except (PyhyiError, OSError) as exc:
         print(f"pyhyi: error: {exc}", file=sys.stderr)
         return EXIT_ERROR

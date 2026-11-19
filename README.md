@@ -46,6 +46,13 @@ internal error.
 pyhyi scans tracked files plus untracked files that are not git-ignored, so
 junk is caught before it is committed.
 
+### Repair Markdown links (on main)
+
+Run `pyhyi fix --dry-run` to preview each file, line and destination. Run
+`pyhyi fix` to apply the edits. The command repairs case mismatches and
+unambiguous Git renames, preserving titles, queries and fragments. It
+respects the check's configured selection, ignores, suppressions and baseline.
+
 ### Run with pytest
 
 Install the pytest extra in your project's test environment:

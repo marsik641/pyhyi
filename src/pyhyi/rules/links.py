@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import posixpath
 import re
+from collections import defaultdict
 from collections.abc import Iterator
+from dataclasses import dataclass
 from urllib.parse import unquote
 
 from markdown_it import MarkdownIt
@@ -25,27 +27,47 @@ _CODE_SPAN = re.compile(r"(`+)(?:(?!\1).)+?\1")
 _SCHEME = re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*:")
 
 
-def link_targets(text: str) -> Iterator[tuple[int, str]]:
-    """(line number, raw target) of every link outside code blocks and code spans."""
+@dataclass(frozen=True)
+class Destination:
+    line: int
+    start: int
+    end: int
+    target: str
+
+
+def destinations(text: str) -> Iterator[Destination]:
+    """Source spans of candidate destinations, excluding fenced and inline code."""
     code_lines = {
         i
         for block in _BLOCKS.parse(text)
         if block.type in {"code_block", "fence"} and block.map
         for i in range(*block.map)
     }
-    for index, line in enumerate(text.splitlines()):
-        if index in code_lines:
+    offset = 0
+    for index, raw in enumerate(text.splitlines(keepends=True), 1):
+        base = offset
+        offset += len(raw)
+        if index - 1 in code_lines:
             continue
-        line = _CODE_SPAN.sub("", line)
+        line = _CODE_SPAN.sub(lambda m: " " * len(m[0]), raw.rstrip("\r\n"))
         for opener in _INLINE.finditer(line):
-            dest = parseLinkDestination(line, opener.end(), len(line))
+            start = opener.end()
+            dest = parseLinkDestination(line, start, len(line))
             if dest.ok and dest.str:
-                yield index + 1, dest.str
+                angle = int(line[start] == "<")
+                yield Destination(index, base + start + angle, base + dest.pos - angle, dest.str)
         for rx in (_REFERENCE, _HTML):
             for match in rx.finditer(line):
-                target = next((g for g in match.groups() if g), "")
-                if target:
-                    yield index + 1, target
+                group = match.lastindex
+                if group:
+                    yield Destination(
+                        index, base + match.start(group), base + match.end(group), match[group]
+                    )
+
+
+def link_targets(text: str) -> Iterator[tuple[int, str]]:
+    for dest in destinations(text):
+        yield dest.line, dest.target
 
 
 def local_path(target: str, source: str) -> str | None:
@@ -72,19 +94,34 @@ def _relative(path: str, source: str) -> str:
     return posixpath.relpath(path, posixpath.dirname(source) or ".")
 
 
+class LinkIndex:
+    def __init__(self, ctx: Context):
+        self.ctx = ctx
+        self.tracked = {"."}
+        self.folded: dict[str, set[str]] = defaultdict(set)
+        for file in git.list_files(ctx.root, tracked_only=True):
+            path = file
+            while path and path not in self.tracked:
+                self.tracked.add(path)
+                self.folded[path.casefold()].add(path)
+                path = posixpath.dirname(path)
+
+    def replacement(self, resolved: str) -> str | None:
+        candidates = self.folded.get(resolved.casefold(), set()).copy()
+        moved = self.ctx.renames.get(resolved)
+        if moved in self.tracked:
+            candidates.add(moved)
+        if len(candidates) == 1:
+            return candidates.pop()
+        return None
+
+
 class BrokenDocLink(Rule):
     id = "broken-doc-link"
     summary = "Relative links in Markdown files must point to files that exist in the repository."
 
     def check(self, ctx: Context) -> Iterator[Finding]:
-        tracked = {"."}
-        for file in git.list_files(ctx.root, tracked_only=True):
-            tracked.add(file)
-            parent = posixpath.dirname(file)
-            while parent and parent not in tracked:
-                tracked.add(parent)
-                parent = posixpath.dirname(parent)
-        lowercase: dict[str, str] | None = None
+        index = LinkIndex(ctx)
         for path in ctx.files:
             if not path.lower().endswith(MARKDOWN_SUFFIXES):
                 continue
@@ -93,36 +130,20 @@ class BrokenDocLink(Rule):
                 continue
             for line, target in link_targets(text):
                 resolved = local_path(target, path)
-                if resolved is None or resolved in tracked:
+                if resolved is None or resolved in index.tracked:
                     continue
-                if lowercase is None:
-                    lowercase = {p.lower(): p for p in sorted(tracked)}
-                message, hint = self._explain(ctx, tracked, lowercase, path, target, resolved)
+                message = f"Link target {target!r} does not exist"
+                hint = None
+                actual = index.replacement(resolved)
+                if actual:
+                    relative = _relative(actual, path)
+                    if actual.casefold() == resolved.casefold():
+                        hint = f"Letter case differs: did you mean {relative!r}?"
+                    else:
+                        hint = f"git history shows it was renamed: link to {relative!r}."
+                elif (ctx.root / resolved).exists():
+                    message = f"Link target {target!r} exists locally but is not tracked by git"
+                    hint = (
+                        "Everyone else gets a broken link: commit the file or stop linking to it."
+                    )
                 yield self.finding(message, path=path, line=line, key=target, hint=hint)
-
-    @staticmethod
-    def _explain(
-        ctx: Context,
-        tracked: set[str],
-        lowercase: dict[str, str],
-        source: str,
-        target: str,
-        resolved: str,
-    ) -> tuple[str, str | None]:
-        missing = f"Link target {target!r} does not exist"
-        # Case first: on case-insensitive filesystems the wrong-case path "exists" locally.
-        actual = lowercase.get(resolved.lower())
-        if actual is not None:
-            return missing, f"Letter case differs: did you mean {_relative(actual, source)!r}?"
-        moved = ctx.renames.get(resolved)
-        if moved in tracked:
-            return (
-                missing,
-                f"git history shows it was renamed: link to {_relative(moved, source)!r}.",
-            )
-        if (ctx.root / resolved).exists():
-            return (
-                f"Link target {target!r} exists locally but is not tracked by git",
-                "Everyone else gets a broken link: commit the file or stop linking to it.",
-            )
-        return missing, None

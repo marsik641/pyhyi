@@ -150,14 +150,18 @@ def renames(root: Path) -> dict[str, str]:
             i += 3
         else:
             i += 1
-    step: dict[str, str] = {}
-    for old, new in reversed(pairs):  # git log is newest first
-        step[old] = new
+    steps: dict[str, set[str]] = {}
+    for old, new in pairs:
+        steps.setdefault(old, set()).add(new)
     final: dict[str, str] = {}
-    for old in step:
-        current, seen = old, {old}
-        while current in step and step[current] not in seen:
-            current = step[current]
+    for old in steps:
+        current = old
+        seen: set[str] = set()
+        while current in steps:
+            if current in seen or len(steps[current]) != 1:
+                break
             seen.add(current)
-        final[old] = current
+            current = next(iter(steps[current]))
+        else:
+            final[old] = current
     return final
