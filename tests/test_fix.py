@@ -37,6 +37,24 @@ def test_fix_obeys_baseline_and_selection(repo):
     assert (repo.root / "README.md").read_text() == "[guide](guide.md)\n"
 
 
+def test_fix_only_new_occurrence_on_same_line(repo):
+    path = repo.write("README.md", "[one](guide.md)\n")
+    repo.commit("docs: guide", {"Guide.md": "v"})
+    assert main(["baseline", str(repo.root)]) == 0
+    path.write_text("[one](guide.md) [two](guide.md)\n")
+    assert main(["fix", str(repo.root)]) == 0
+    assert path.read_text() == "[one](guide.md) [two](Guide.md)\n"
+
+
+def test_fix_preserves_local_replacement_of_moved_file(repo):
+    repo.commit("docs: guide", {"guide.md": "v", "README.md": "[one](guide.md)"})
+    repo.git("mv", "guide.md", "moved.md")
+    repo.commit("docs: move")
+    repo.write("guide.md", "local draft")
+    assert main(["fix", str(repo.root)]) == 0
+    assert (repo.root / "README.md").read_text() == "[one](guide.md)"
+
+
 def test_multiple_historical_destinations_are_left_alone(repo):
     repo.commit("docs: first", {"old.md": "one", "README.md": "[x](old.md)"})
     repo.git("mv", "old.md", "one.md")

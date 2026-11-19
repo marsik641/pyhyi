@@ -7,7 +7,7 @@ import posixpath
 import re
 import shutil
 import tempfile
-from collections import defaultdict
+from collections import Counter, defaultdict
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import quote
@@ -87,6 +87,7 @@ def fix_links(root: Path, config: Config, registry: engine.Registry, *, dry_run:
     for finding in result.findings:
         if finding.path and finding.line and finding.key:
             eligible[finding.path].add((finding.line, finding.key))
+    baselined = Counter((f.path, f.line, f.key) for f in result.baselined)
     index = LinkIndex(Context(root, config))
     count = 0
     for source, keys in eligible.items():
@@ -95,7 +96,13 @@ def fix_links(root: Path, config: Config, registry: engine.Registry, *, dry_run:
             continue
         original = path.read_bytes()
         text = original.decode("utf-8")
-        candidates = [d for d in destinations(text) if (d.line, d.target) in keys]
+        candidates = []
+        for dest in destinations(text):
+            key = (source, dest.line, dest.target)
+            if baselined[key]:
+                baselined[key] -= 1
+            elif (dest.line, dest.target) in keys:
+                candidates.append(dest)
         edits = []
         for dest in _verified(text, candidates):
             raw = text[dest.start : dest.end]
@@ -104,6 +111,9 @@ def fix_links(root: Path, config: Config, registry: engine.Registry, *, dry_run:
                 continue
             actual = index.replacement(resolved)
             if actual is None:
+                continue
+            local = root / resolved
+            if local.exists() and not local.samefile(root / actual):
                 continue
             new_path = (
                 "/" + actual
