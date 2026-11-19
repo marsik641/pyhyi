@@ -19,6 +19,16 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run pyhyi check
 
+  build:
+    # Same build as the release workflow, so packaging breaks before a tag does.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv build --out-dir dist/pyhyi
+      - run: python3 scripts/build_aliases.py --out-dir dist
+      - run: ls -R dist
+
   test:
     strategy:
       fail-fast: false

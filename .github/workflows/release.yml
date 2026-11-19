@@ -1,0 +1,56 @@
+name: Release
+
+# Pushing a tag vX.Y.Z publishes pyhyi and its alias packages to PyPI via
+# trusted publishing (no API tokens). Every package is published by its own
+# job in its own environment `pypi-<package>`, matching the trusted publisher
+# configured for that project on PyPI. See docs/releasing.md.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.list.outputs.packages }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Check that the tag matches the package version
+        run: |
+          version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/pyhyi/__init__.py)
+          echo "tag: ${GITHUB_REF_NAME}, package: ${version}"
+          test "${GITHUB_REF_NAME}" = "v${version}"
+      - run: uv build --out-dir dist/pyhyi
+      - run: python3 scripts/build_aliases.py --out-dir dist
+      - id: list
+        run: echo "packages=$(ls dist | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.build.outputs.packages) }}
+    environment:
+      name: pypi-${{ matrix.package }}
+      url: https://pypi.org/project/${{ matrix.package }}/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/${{ matrix.package }}/
