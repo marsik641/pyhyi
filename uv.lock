@@ -62,6 +62,9 @@ wheels = [
 [[package]]
 name = "pyhyi"
 source = { editable = "." }
+dependencies = [
+    { name = "tomli", marker = "python_full_version < '3.11'" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -70,6 +73,7 @@ dev = [
 ]
 
 [package.metadata]
+requires-dist = [{ name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=1.1" }]
 
 [package.metadata.requires-dev]
 dev = [

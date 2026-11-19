@@ -10,7 +10,9 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "tomli>=1.1; python_version < '3.11'",
+]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Environment :: Console",
@@ -37,6 +39,11 @@ path = "src/pyhyi/__init__.py"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+
+[tool.pyhyi.per-path-ignores]
+# Test fixtures and docs quote suppression markers on purpose.
+"tests/**" = ["bad-suppression"]
+"README.md" = ["bad-suppression"]
 
 [tool.ruff]
 line-length = 100
