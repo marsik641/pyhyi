@@ -48,11 +48,10 @@ junk is caught before it is committed.
 
 ### Run with pytest
 
-The pytest plugin is available on `main`. In this checkout, use `uv sync`.
-In another project's test environment, install it from Git:
+Install the pytest extra in your project's test environment:
 
 ```sh
-python -m pip install "pyhyi[pytest] @ git+https://github.com/marsik641/pyhyi.git@main"
+python -m pip install "pyhyi[pytest]>=0.2.0"
 pytest --pyhyi
 ```
 
