@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime
@@ -106,3 +107,54 @@ def log(root: Path, *, max_count: int | None = None) -> list[Commit]:
             )
         )
     return commits
+
+
+_BLAME_HEADER = re.compile(r"^([0-9a-f]{40}) \d+ (\d+)(?: \d+)?$")
+
+
+def blame_author_times(root: Path, path: str) -> dict[int, int]:
+    """Author time (Unix seconds) of every committed line of a file, by line number.
+
+    Lines not committed yet are absent. Raises GitError for files git cannot
+    blame, such as untracked ones.
+    """
+    out = run_git(["blame", "--line-porcelain", "--", path], cwd=root)
+    times: dict[int, int] = {}
+    sha = ""
+    line_no = 0
+    for row in out.splitlines():
+        if row.startswith("\t"):
+            continue
+        header = _BLAME_HEADER.match(row)
+        if header:
+            sha, line_no = header[1], int(header[2])
+        elif row.startswith("author-time ") and sha.strip("0"):
+            times[line_no] = int(row.split(" ", 1)[1])
+    return times
+
+
+def renames(root: Path) -> dict[str, str]:
+    """Map every path git saw renamed to the path it was finally renamed to."""
+    if not has_commits(root):
+        return {}
+    out = run_git(["log", "--format=", "--name-status", "--diff-filter=R", "-M", "-z"], cwd=root)
+    tokens = [t.strip("\n") for t in out.split("\0")]
+    pairs: list[tuple[str, str]] = []
+    i = 0
+    while i + 2 < len(tokens):
+        if tokens[i].startswith("R"):
+            pairs.append((tokens[i + 1], tokens[i + 2]))
+            i += 3
+        else:
+            i += 1
+    step: dict[str, str] = {}
+    for old, new in reversed(pairs):  # git log is newest first
+        step[old] = new
+    final: dict[str, str] = {}
+    for old in step:
+        current, seen = old, {old}
+        while current in step and step[current] not in seen:
+            current = step[current]
+            seen.add(current)
+        final[old] = current
+    return final

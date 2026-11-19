@@ -29,6 +29,7 @@ class Context:
         self.baseline_path = str(PurePosixPath(config.baseline))
         self._text: dict[str, str | None] = {}
         self._suppressions: dict[str, dict[int, Suppression]] = {}
+        self._blame: dict[str, dict[int, int]] = {}
 
     # --- files -------------------------------------------------------------
 
@@ -107,3 +108,17 @@ class Context:
     def commits(self) -> tuple[git.Commit, ...]:
         """Commits reachable from HEAD, newest first."""
         return tuple(git.log(self.root))
+
+    def blame_times(self, path: str) -> dict[int, int]:
+        """Author time of each committed line; empty for untracked files."""
+        if path not in self._blame:
+            try:
+                self._blame[path] = git.blame_author_times(self.root, path)
+            except git.GitError:
+                self._blame[path] = {}
+        return self._blame[path]
+
+    @cached_property
+    def renames(self) -> dict[str, str]:
+        """Old path -> final path, for every rename in the history."""
+        return git.renames(self.root)

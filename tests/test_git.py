@@ -92,6 +92,29 @@ def test_log_utc_commit(repo: GitRepo, monkeypatch: pytest.MonkeyPatch) -> None:
     assert commit.date == datetime(2026, 11, 19, 8, 53, 23, tzinfo=timezone.utc)
 
 
+def test_renames_follow_chains(repo: GitRepo) -> None:
+    assert git.renames(repo.root) == {}
+    repo.commit("chore: a", {"a.md": "same content"})
+    repo.git("mv", "a.md", "b.md")
+    repo.commit("chore: a to b")
+    (repo.root / "docs").mkdir()
+    repo.git("mv", "b.md", "docs/c.md")
+    repo.commit("chore: b to c")
+    assert git.renames(repo.root) == {"a.md": "docs/c.md", "b.md": "docs/c.md"}
+
+
+def test_blame_author_times(repo: GitRepo, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GIT_AUTHOR_DATE", "2020-01-01T00:00:00+0000")
+    repo.commit("chore: old", {"f.txt": "one\ntwo\n"})
+    monkeypatch.delenv("GIT_AUTHOR_DATE")
+    repo.write("f.txt", "one\ntwo\nthree uncommitted\n")
+    times = git.blame_author_times(repo.root, "f.txt")
+    assert times == {1: 1577836800, 2: 1577836800}
+    repo.write("untracked.txt", "x")
+    with pytest.raises(GitError):
+        git.blame_author_times(repo.root, "untracked.txt")
+
+
 def test_log_max_count(repo: GitRepo) -> None:
     for i in range(3):
         repo.commit(f"chore: {i}")
