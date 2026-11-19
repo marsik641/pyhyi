@@ -9,6 +9,8 @@ from collections import defaultdict
 from collections.abc import Iterator
 from pathlib import PurePosixPath
 
+from markdown_it import MarkdownIt
+
 from pyhyi.context import Context
 from pyhyi.rules.links import MARKDOWN_SUFFIXES, link_targets, local_path
 
@@ -16,6 +18,27 @@ JS_SUFFIXES = (".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs")
 SOURCE_SUFFIXES = (".py", *JS_SUFFIXES)
 _JS_STRING = re.compile(r"""(?:"([^"\n]+)"|'([^'\n]+)')""")
 _PATH_WORD = re.compile(r"[\w@./-]+")
+_MARKDOWN = MarkdownIt("commonmark")
+
+
+def _documented_files(text: str, source: str, files: set[str]) -> Iterator[str]:
+    """Resolve literal paths in Markdown code spans against the document or repository root."""
+    if "`" not in text:
+        return
+    for block in _MARKDOWN.parse(text):
+        for token in block.children or ():
+            if token.type != "code_inline":
+                continue
+            path = token.content
+            if not path or path.startswith("/") or "\n" in path:
+                continue
+            relative = posixpath.normpath(posixpath.join(posixpath.dirname(source), path))
+            candidates = {relative}
+            if not path.startswith(("./", "../")):
+                candidates.add(posixpath.normpath(path))
+            matches = candidates & files
+            if len(matches) == 1 and source not in matches:
+                yield from matches
 
 
 def _python_names(text: str) -> Iterator[str]:
@@ -54,6 +77,7 @@ def referenced_paths(ctx: Context) -> set[str]:
                 tail = parts[start:]
                 names[".".join(tail)].add(path)
                 names["/".join(tail)].add(path)
+    files = set(ctx.all_files)
     used: set[str] = set()
     for source in ctx.files:
         suffix = PurePosixPath(source).suffix.lower()
@@ -71,6 +95,7 @@ def referenced_paths(ctx: Context) -> set[str]:
         if not text:
             continue
         if suffix in MARKDOWN_SUFFIXES:
+            used.update(_documented_files(text, source, files))
             for _, target in link_targets(text):
                 local = local_path(target, source)
                 if local and local != source:

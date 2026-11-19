@@ -52,6 +52,39 @@ def test_orphan_evidence_includes_python_and_typescript(repo, capsys, monkeypatc
     assert inspect(repo, capsys, "orphan-file") == {"src/pkg/obsolete_beta.py"}
 
 
+def test_orphan_file_recognizes_documented_paths(repo, capsys, monkeypatch):
+    monkeypatch.setenv("GIT_COMMITTER_DATE", "2020-01-01T00:00:00Z")
+    repo.commit(
+        "feat: add sample modules",
+        {
+            "notes/helpers/backup_grid.py": "pass",
+            "pkg/scratch_curve.ts": "export {}",
+            "examples-old/backup_grid.py": "pass",
+            "pkg/obsolete_table.py": "pass",
+            "notes/guide.md": (
+                "Run `helpers/backup_grid.py` to draw a grid.\n\n"
+                "See also ``pkg/scratch_curve.ts``.\n\n"
+                "<!-- Example: `pkg/obsolete_table.py` -->\n\n"
+                "```text\nSee `pkg/obsolete_table.py`.\n```\n"
+            ),
+        },
+    )
+    assert inspect(repo, capsys, "orphan-file") == {
+        "examples-old/backup_grid.py",
+        "pkg/obsolete_table.py",
+    }
+
+
+def test_ambiguous_inline_path_does_not_select_a_module(repo, capsys, monkeypatch):
+    monkeypatch.setenv("GIT_COMMITTER_DATE", "2020-01-01T00:00:00Z")
+    paths = {"pkg/backup_grid.py", "notes/pkg/backup_grid.py"}
+    repo.commit("feat: modules", {path: "pass" for path in paths})
+    repo.write("notes/guide.md", "See `pkg/backup_grid.py`.")
+    assert inspect(repo, capsys, "orphan-file") == paths
+    repo.write("notes/guide.md", "See `./pkg/backup_grid.py`.")
+    assert inspect(repo, capsys, "orphan-file") == {"pkg/backup_grid.py"}
+
+
 def test_pytest_open_removes_review_candidate(repo, capsys, monkeypatch):
     import subprocess
     import sys

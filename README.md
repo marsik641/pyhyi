@@ -128,8 +128,10 @@ successful. They use committed history and skip shallow clones.
 | `stale-doc` | A source file linked by a Markdown document changed repeatedly after the document's last committed edit. | `min-days` (30), `min-commits` (3) |
 | `orphan-file` | An old Python or JS/TS module has a scratch, backup, obsolete or unused name and no detected local consumer. | `min-days` (30) |
 
-The reference scan uses Python's AST, literal JS/TS paths, Markdown links
-and manifest strings. Dynamic imports and external callers need human review.
+The reference scan for orphan files and dump folders uses Python's AST, literal
+JS/TS paths, Markdown links and manifest strings. A path in a Markdown code
+span also counts when it identifies a single repository file relative to the
+document or repository root. Dynamic imports and external callers need human review.
 With these rules enabled in configuration, `pytest --pyhyi` removes orphan
 and dump candidates observed during that run from its final report.
 
