@@ -46,6 +46,31 @@ internal error.
 pyhyi scans tracked files plus untracked files that are not git-ignored, so
 junk is caught before it is committed.
 
+### Run with pytest
+
+The pytest plugin is available on `main`. In this checkout, use `uv sync`.
+In another project's test environment, install it from Git:
+
+```sh
+python -m pip install "pyhyi[pytest] @ git+https://github.com/marsik641/pyhyi.git@main"
+pytest --pyhyi
+```
+
+The plugin runs the same check as `pyhyi check` before collection, using
+the Git repository containing pytest's root directory. Tests run even when
+hygiene findings exist. New findings fail an otherwise successful run.
+The terminal summary includes the findings, suppressions and baseline counts.
+To enable this for every run in a project, append `--pyhyi` to pytest's
+`addopts`.
+
+The summary also lists repository-relative paths observed in Python's
+`open` audit events during collection and test execution, including fixtures.
+It lists each path once, using pyhyi's scannable files at session start.
+The list covers attempted opens (including writes) in the pytest process
+and participating pytest-xdist workers. Other subprocesses and native I/O
+are outside its scope. A cached import may only open bytecode. A missing
+entry therefore says nothing about whether a file is safe to delete.
+
 ## Rules
 
 All rules are enabled by default; `pyhyi rules` lists them.

@@ -28,6 +28,12 @@ Repository = "https://github.com/marsik641/pyhyi"
 [project.scripts]
 pyhyi = "pyhyi.cli:main"
 
+[project.entry-points.pytest11]
+pyhyi = "pyhyi.pytest_plugin"
+
+[project.optional-dependencies]
+pytest = ["pytest>=8"]
+
 [dependency-groups]
 dev = [
     "pytest>=8",

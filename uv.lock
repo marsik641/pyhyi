@@ -88,6 +88,11 @@ dependencies = [
     { name = "tomli", marker = "python_full_version < '3.11'" },
 ]
 
+[package.optional-dependencies]
+pytest = [
+    { name = "pytest" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
@@ -98,8 +103,10 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "markdown-it-py", specifier = ">=4,<5" },
+    { name = "pytest", marker = "extra == 'pytest'", specifier = ">=8" },
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=1.1" },
 ]
+provides-extras = ["pytest"]
 
 [package.metadata.requires-dev]
 dev = [
