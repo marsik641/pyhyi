@@ -36,7 +36,8 @@ jobs:
         with:
           name: packages
           path: restored/
-      - run: diff -qr dist restored
+      # uv writes a local .gitignore alongside each pair of distributions.
+      - run: diff -qr --exclude=.gitignore dist restored
 
   integrations:
     runs-on: ubuntu-latest
