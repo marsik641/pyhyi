@@ -27,6 +27,13 @@ def pytest_configure(config: pytest.Config) -> None:
         config.pluginmanager.register(_SessionCheck(), "pyhyi-session")
 
 
+def _path_key(path: str) -> str:
+    if os.name == "nt" and "~" in path:
+        # Expand DOS short names used by some Windows temp directories.
+        path = os.path.realpath(path)
+    return os.path.normcase(path)
+
+
 @cache
 def _open_listeners() -> list[Callable[[str], None]]:
     # CPython audit hooks live until interpreter shutdown. Install one dispatcher
@@ -37,7 +44,7 @@ def _open_listeners() -> list[Callable[[str], None]]:
         if event != "open" or not listeners or not isinstance(args[0], (str, bytes)):
             return
         try:
-            path = os.path.normcase(os.path.abspath(os.fsdecode(args[0])))
+            path = _path_key(os.path.abspath(os.fsdecode(args[0])))
         except (OSError, ValueError):
             return  # e.g. a relative open after the working directory was removed
         for record in listeners:
@@ -81,7 +88,7 @@ class _SessionCheck:
 
         # Index only paths eligible for scanning at startup. The auditor keeps
         # neither file contents nor any paths from outside this snapshot.
-        by_path = {os.path.normcase(os.fspath(root / p)): p for p in paths}
+        by_path = {_path_key(os.fspath(root / p)): p for p in paths}
 
         def record(absolute: str) -> None:
             if (relative := by_path.get(absolute)) is not None:

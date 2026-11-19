@@ -61,6 +61,33 @@ def test_open_events_are_scoped_to_tests_and_project_files(repo: GitRepo) -> Non
     assert not {"data/untouched.txt", "excluded/a.txt", "local-only/secret.txt"} & set(paths)
 
 
+@pytest.mark.skipif(os.name != "nt", reason="DOS short paths require Windows")
+def test_open_via_short_directory_name(repo: GitRepo) -> None:
+    import ctypes
+
+    name = "a long directory"
+    directory = repo.root / name
+    directory.mkdir()
+    buf = ctypes.create_unicode_buffer(32768)
+    assert ctypes.windll.kernel32.GetShortPathNameW(str(directory), buf, len(buf))
+    if "~" not in buf.value:
+        pytest.skip("8.3 names disabled on this volume")
+    repo.commit(
+        "test: short paths",
+        {
+            f"{name}/sample.txt": "sample",
+            "test_demo.py": (
+                "def test_read():\n"
+                f"    with open({buf.value!r} + '/sample.txt') as f:\n"
+                "        assert f.read() == 'sample'\n"
+            ),
+        },
+    )
+    result = run(repo, "-m", "pytest", "-q", "--pyhyi")
+    assert result.returncode == 0, result.stdout
+    assert f"  {name}/sample.txt" in result.stdout.splitlines()
+
+
 def test_findings_and_baseline_match_cli(repo: GitRepo) -> None:
     repo.commit("test: pass", {"test_demo.py": "def test_demo(): pass\n", "stray.log": ""})
     plain = run(repo, "-m", "pytest", "-q")
