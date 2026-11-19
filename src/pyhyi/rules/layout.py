@@ -53,6 +53,8 @@ KNOWN_FILES = (
     ".editorconfig",
     ".pre-commit-config.yaml",
     ".pre-commit-hooks.yaml",
+    ".markdownlint.json",
+    ".markdownlint.jsonc",
     "*.code-workspace",
     # generic config shapes
     "*.toml",
@@ -107,6 +109,8 @@ KNOWN_FILES = (
     "app.json",
     ".node-version",
     "index.html",
+    # Conventional database schema, distinct from arbitrary SQL dumps.
+    "schema.sql",
     # other ecosystems
     "go.mod",
     "go.sum",
