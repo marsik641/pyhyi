@@ -42,8 +42,8 @@ testpaths = ["tests"]
 addopts = "-ra"
 
 [tool.pyhyi.per-path-ignores]
-# Test fixtures and docs quote suppression markers on purpose.
-"tests/**" = ["bad-suppression"]
+# Test fixtures and docs quote suppression and debt markers on purpose.
+"tests/**" = ["bad-suppression", "stale-todo"]
 "README.md" = ["bad-suppression"]
 
 [tool.ruff]

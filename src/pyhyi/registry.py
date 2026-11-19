@@ -6,11 +6,21 @@ from importlib.metadata import entry_points
 
 from pyhyi.errors import ConfigError
 from pyhyi.rules import Rule, validate_rule_class
+from pyhyi.rules.commits import CommitConvention
+from pyhyi.rules.layout import RootClutter
+from pyhyi.rules.links import BrokenDocLink
 from pyhyi.rules.suppression import BadSuppression
+from pyhyi.rules.todos import StaleTodo
 
 ENTRY_POINT_GROUP = "pyhyi.rules"
 
-BUILTIN_RULES: tuple[type[Rule], ...] = (BadSuppression,)
+BUILTIN_RULES: tuple[type[Rule], ...] = (
+    BadSuppression,
+    BrokenDocLink,
+    CommitConvention,
+    RootClutter,
+    StaleTodo,
+)
 
 
 def load_rules(*, plugins: bool = True) -> dict[str, type[Rule]]:

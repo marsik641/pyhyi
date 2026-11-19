@@ -40,13 +40,13 @@ def test_module_entry_point() -> None:
 
 
 def test_check_clean_repo(repo: GitRepo, capsys: pytest.CaptureFixture[str]) -> None:
-    repo.commit("init", {"a.py": "x = 1\n"})
+    repo.commit("chore: init", {"a.py": "x = 1\n"})
     assert main(["check", str(repo.root)]) == 0
     assert capsys.readouterr().out == "No issues found.\n"
 
 
 def test_check_reports_issues(repo: GitRepo, capsys: pytest.CaptureFixture[str]) -> None:
-    repo.commit("init", {"src/a.py": BAD_LINE})
+    repo.commit("chore: init", {"src/a.py": BAD_LINE})
     assert main(["check", str(repo.root / "src")]) == 1
     out = capsys.readouterr().out
     assert "src/a.py:1: bad-suppression: Suppression names unknown rule(s): no-such-rule" in out
@@ -55,7 +55,7 @@ def test_check_reports_issues(repo: GitRepo, capsys: pytest.CaptureFixture[str])
 
 
 def test_check_json(repo: GitRepo, capsys: pytest.CaptureFixture[str]) -> None:
-    repo.commit("init", {"a.py": BAD_LINE})
+    repo.commit("chore: init", {"a.py": BAD_LINE})
     assert main(["check", str(repo.root), "--format", "json"]) == 1
     data = json.loads(capsys.readouterr().out)
     assert data["version"] == 1
@@ -66,14 +66,14 @@ def test_check_json(repo: GitRepo, capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_check_select_ignore(repo: GitRepo, capsys: pytest.CaptureFixture[str]) -> None:
-    repo.commit("init", {"a.py": BAD_LINE})
+    repo.commit("chore: init", {"a.py": BAD_LINE})
     assert main(["check", str(repo.root), "--ignore", "bad-suppression"]) == 0
     assert main(["check", str(repo.root), "--select", "nope"]) == 2
     assert "unknown rule(s): nope" in capsys.readouterr().err
 
 
 def test_baseline_then_check(repo: GitRepo, capsys: pytest.CaptureFixture[str]) -> None:
-    repo.commit("init", {"a.py": BAD_LINE})
+    repo.commit("chore: init", {"a.py": BAD_LINE})
     assert main(["baseline", str(repo.root)]) == 0
     assert "Recorded 1 issue in .pyhyi-baseline.json." in capsys.readouterr().out
     assert (repo.root / ".pyhyi-baseline.json").is_file()
