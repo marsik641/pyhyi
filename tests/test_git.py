@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -67,6 +68,28 @@ def test_log_merge_commit(repo: GitRepo) -> None:
     merge = git.log(repo.root)[0]
     assert merge.is_merge
     assert set(merge.parents) == {main_tip, side}
+
+
+@pytest.mark.parametrize(
+    ("value", "offset_hours"),
+    [
+        ("2026-11-19T08:53:23Z", 0),
+        ("2026-11-19T08:53:23+00:00", 0),
+        ("2026-11-19T11:53:23+03:00", 3),
+    ],
+)
+def test_parse_date(value: str, offset_hours: int) -> None:
+    parsed = git.parse_date(value)
+    assert parsed.utcoffset() == timedelta(hours=offset_hours)
+    assert parsed.astimezone(timezone.utc) == datetime(2026, 11, 19, 8, 53, 23, tzinfo=timezone.utc)
+
+
+def test_log_utc_commit(repo: GitRepo, monkeypatch: pytest.MonkeyPatch) -> None:
+    # git prints UTC dates with a `Z` suffix; Python 3.10 cannot parse it natively.
+    monkeypatch.setenv("GIT_AUTHOR_DATE", "2026-11-19T08:53:23+0000")
+    repo.commit("chore: utc")
+    (commit,) = git.log(repo.root)
+    assert commit.date == datetime(2026, 11, 19, 8, 53, 23, tzinfo=timezone.utc)
 
 
 def test_log_max_count(repo: GitRepo) -> None:

@@ -62,6 +62,17 @@ class Commit:
 _LOG_FORMAT = "%H%x1f%P%x1f%an%x1f%aI%x1f%s%x1f%b%x1e"
 
 
+def parse_date(value: str) -> datetime:
+    """Parse git's strict ISO 8601 date (`%aI`).
+
+    git writes UTC as `Z`, which `datetime.fromisoformat` accepts only since
+    Python 3.11.
+    """
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    return datetime.fromisoformat(value)
+
+
 def has_commits(root: Path) -> bool:
     try:
         run_git(["rev-parse", "--verify", "--quiet", "HEAD"], cwd=root)
@@ -89,7 +100,7 @@ def log(root: Path, *, max_count: int | None = None) -> list[Commit]:
                 sha=sha,
                 parents=tuple(parents.split()),
                 author=author,
-                date=datetime.fromisoformat(date),
+                date=parse_date(date),
                 subject=subject,
                 body=body.strip(),
             )
