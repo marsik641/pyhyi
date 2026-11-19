@@ -1,24 +1,145 @@
-"""Command-line entry point."""
+"""Command-line entry point.
+
+Exit codes: 0 - no issues, 1 - issues found, 2 - usage, configuration or
+internal error.
+"""
 
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
+import contextlib
+import sys
+from collections.abc import Callable, Sequence
+from pathlib import Path
 
-from pyhyi import __version__
+from pyhyi import __version__, baseline, engine, git, report
+from pyhyi.config import Config, load_config
+from pyhyi.errors import PyhyiError
+from pyhyi.registry import load_rules
+
+EXIT_OK = 0
+EXIT_ISSUES = 1
+EXIT_ERROR = 2
+
+
+def _id_list(value: str) -> tuple[str, ...]:
+    return tuple(part.strip() for part in value.split(",") if part.strip())
+
+
+def _add_path(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "path",
+        nargs="?",
+        default=".",
+        help="any path inside the repository (default: current directory)",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="pyhyi",
-        description="Repository hygiene checker.",
-    )
+    parser = argparse.ArgumentParser(prog="pyhyi", description="Repository hygiene checker.")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    sub = parser.add_subparsers(dest="command", metavar="COMMAND")
+
+    check = sub.add_parser("check", help="check the repository and report issues")
+    _add_path(check)
+    check.add_argument("--format", choices=("text", "json"), default="text")
+    check.add_argument(
+        "--select", type=_id_list, metavar="IDS", help="comma-separated rules to run instead"
+    )
+    check.add_argument(
+        "--ignore", type=_id_list, default=(), metavar="IDS", help="comma-separated rules to skip"
+    )
+    check.add_argument("--no-baseline", action="store_true", help="report baselined issues as well")
+
+    base = sub.add_parser(
+        "baseline", help="record current issues so that only new ones fail the check"
+    )
+    _add_path(base)
+
+    sub.add_parser("rules", help="list available rules")
     return parser
 
 
+def _open_repo(path_arg: str) -> tuple[Path, Config]:
+    start = Path(path_arg).resolve()
+    if start.is_file():
+        start = start.parent
+    if not start.is_dir():
+        raise PyhyiError(f"path does not exist: {path_arg}")
+    root = git.find_root(start)
+    return root, load_config(root)
+
+
+def _print_errors(result: engine.Result) -> None:
+    for error in result.errors:
+        print(f"pyhyi: rule {error.rule} crashed:\n{error.traceback}", file=sys.stderr)
+
+
+def cmd_check(args: argparse.Namespace) -> int:
+    root, config = _open_repo(args.path)
+    result = engine.run(
+        root,
+        config,
+        load_rules(),
+        select=args.select,
+        ignore=args.ignore,
+        use_baseline=not args.no_baseline,
+    )
+    render = report.render_json if args.format == "json" else report.render_text
+    sys.stdout.write(render(result))
+    _print_errors(result)
+    if result.errors:
+        return EXIT_ERROR
+    return EXIT_ISSUES if result.findings else EXIT_OK
+
+
+def cmd_baseline(args: argparse.Namespace) -> int:
+    root, config = _open_repo(args.path)
+    result = engine.run(root, config, load_rules(), use_baseline=False)
+    if result.errors:
+        _print_errors(result)
+        print("pyhyi: baseline not written because some rules crashed", file=sys.stderr)
+        return EXIT_ERROR
+    baseline.dump(root / config.baseline, result.findings)
+    issues = "1 issue" if len(result.findings) == 1 else f"{len(result.findings)} issues"
+    print(f"Recorded {issues} in {config.baseline}.")
+    return EXIT_OK
+
+
+def cmd_rules(args: argparse.Namespace) -> int:
+    registry = load_rules()
+    width = max(len(rule_id) for rule_id in registry)
+    for rule_id, cls in registry.items():
+        state = "" if cls.default_enabled else "  (off by default)"
+        print(f"{rule_id:<{width}}  {cls.summary}{state}")
+    return EXIT_OK
+
+
+COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
+    "check": cmd_check,
+    "baseline": cmd_baseline,
+    "rules": cmd_rules,
+}
+
+
+def _tolerant_streams() -> None:
+    # Never crash on characters the console encoding cannot represent.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            with contextlib.suppress(ValueError, OSError):
+                reconfigure(errors="replace")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    _tolerant_streams()
     parser = build_parser()
-    parser.parse_args(argv)
-    parser.print_help()
-    return 0
+    args = parser.parse_args(argv)
+    if args.command is None:
+        parser.print_help()
+        return EXIT_OK
+    try:
+        return COMMANDS[args.command](args)
+    except PyhyiError as exc:
+        print(f"pyhyi: error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
