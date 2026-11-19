@@ -244,7 +244,63 @@ def test_broken_doc_link_rule(repo: GitRepo) -> None:
     assert "not tracked by git" in ignored.message
 
 
+def test_link_target_must_be_in_the_index(repo: GitRepo) -> None:
+    repo.commit("docs: add links", {"README.md": "[file](docs/local.md)\n[dir](docs/)\n"})
+    repo.write("docs/local.md", "draft")
+    result = run_rule(repo, "broken-doc-link")
+    assert found(result) == [("README.md", 1), ("README.md", 2)]
+    assert all("not tracked by git" in f.message for f in result.findings)
+    repo.git("add", "docs/local.md")
+    result = run_rule(repo, "broken-doc-link")
+    assert not result.errors and not result.findings
+
+
+def test_link_with_parentheses(repo: GitRepo) -> None:
+    repo.commit(
+        "docs: link to editions",
+        {
+            "docs/guide(v2).md": "",
+            "README.md": "[ok](docs/guide(v2).md)\n[gone](docs/guide(v1).md)\n",
+        },
+    )
+    result = run_rule(repo, "broken-doc-link")
+    assert [(f.line, f.key) for f in result.findings] == [(2, "docs/guide(v1).md")]
+
+
+def test_indented_markdown_code(repo: GitRepo) -> None:
+    repo.commit(
+        "docs: add examples",
+        {
+            "README.md": (
+                "Example:\n\n    [example](code.md)\n\n\t[more](sample.md)\n\n"
+                "[ordinary](missing.md)\n    [paragraph continuation](also-missing.md)\n"
+                "\n- A list item\n\n    [nested paragraph](list-missing.md)\n"
+            )
+        },
+    )
+    result = run_rule(repo, "broken-doc-link")
+    assert [(f.line, f.key) for f in result.findings] == [
+        (7, "missing.md"),
+        (8, "also-missing.md"),
+        (12, "list-missing.md"),
+    ]
+
+
 # --- stale-todo -------------------------------------------------------------------
+
+
+def test_python_todo_in_strings(repo: GitRepo, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GIT_AUTHOR_DATE", OLD_DATE)
+    repo.commit(
+        "feat: render markers",
+        {
+            "main.py": 's = "example # TODO printed text"\n'
+            'doc = """\n# TODO inside a multiline string\n"""\n'
+            'x = "example # TODO"  # FIXME: real comment\n'
+        },
+    )
+    result = run_rule(repo, "stale-todo")
+    assert [(f.line, f.message.split()[0]) for f in result.findings] == [(5, "FIXME")]
 
 
 def test_stale_todo_rule(repo: GitRepo, monkeypatch: pytest.MonkeyPatch) -> None:
