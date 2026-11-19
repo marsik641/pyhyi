@@ -4,7 +4,7 @@ Repository hygiene checker. It catches the mess that autonomous coding agents
 (and hurried humans) leave behind: dump folders, stale docs, broken doc links,
 forgotten TODOs, junk in the repo root, commits that ignore the convention.
 
-> Status: pre-alpha. The engine is in place; real hygiene rules come next.
+> Status: pre-alpha. Five rules so far; more are coming.
 
 ## Idea
 
@@ -45,6 +45,20 @@ internal error.
 
 pyhyi scans tracked files plus untracked files that are not git-ignored, so
 junk is caught before it is committed.
+
+## Rules
+
+All rules are enabled by default; `pyhyi rules` lists them.
+
+| Rule | What it reports | Options |
+| --- | --- | --- |
+| `commit-convention` | Commit subjects that do not follow [Conventional Commits](https://www.conventionalcommits.org/). Merge commits and git's own `Revert "..."` subjects are skipped; `fixup!`/`squash!` commits are reported. | `types` (default: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert), `since` (a date; older commits are skipped) |
+| `root-clutter` | Files in the repository root other than well-known project files (README, LICENSE, CHANGELOG, manifests, lockfiles, tool configs, environment templates) and source code. Catches stray reports, dumps, logs, screenshots and committed `.env` files. | `allow` (extra glob patterns) |
+| `broken-doc-link` | Relative links in Markdown that point to paths not tracked by git, with a hint when git history shows the file was renamed or the letter case differs. External URLs and code blocks are ignored. | — |
+| `stale-todo` | TODO, FIXME, HACK and XXX at the start of a comment that are older than `max-age-days` according to `git blame`. Uncommitted lines are ignored; in Markdown only `<!-- -->` comments count. | `markers`, `max-age-days` (default: 14) |
+| `bad-suppression` | Inline suppressions without a reason or naming unknown rules. | — |
+
+On an existing repository, start with `pyhyi baseline` so that only new issues fail.
 
 ## Configuration
 
