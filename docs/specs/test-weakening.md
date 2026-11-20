@@ -1,6 +1,6 @@
 # Test weakening
 
-Status: ready for implementation
+Status: implemented on main
 
 ## Purpose
 
@@ -18,6 +18,8 @@ At 221cc43 the registry contains five default rules and three opt-in rules. None
 - Follow pytest's default Python module naming (`test_*.py`, `*_test.py`), module-level test functions and test methods in conventional test classes. Support sync and async definitions. Document deliberate limits of static discovery and any narrower supported class patterns. Parse source with the standard library and never follow a symlink outside the repo. Ignore non-parseable or unsupported source conservatively.
 
 ## Two observations
+
+Include test methods on classes directly inheriting an unambiguously imported `unittest.TestCase` or `unittest.IsolatedAsyncioTestCase`, independently of the class name. This is a standard pytest collection path. Indirect project-specific base classes may be omitted. In these standard-library classes also accept a direct `self.assertEqual(actual, expected)` call replaced by `assert True` as a narrowly named instance of observation 2. Require an ordinary instance method, a nonliteral operand, a single changed statement and an unambiguous assertion method. Describe the call that disappeared. Include synthetic positive and look-alike negative cases.
 
 1. A test function or method carries an unconditional `pytest.mark.skip` decorator, bare or called (a reason is allowed), with an unambiguous pytest import. In comparison mode require the same test to have lacked that unconditional decorator in the base. Exclude conditional skips, xfail and look-alike decorators. Avoid a claim that a test previously executed, since class markers, fixtures and CI selectors can also skip it.
 2. A test contains a direct statement `assert True` with optional message. In comparison mode require evidence that a prior nonconstant assertion in the same test and statement position was replaced by that placeholder. A conservative approach accepts one changed direct assertion with otherwise equivalent surrounding statements, ignoring formatting and line numbers. Skip ambiguous rewrites. Adding a placeholder beside an intact assertion does not constitute replacement.
@@ -42,6 +44,13 @@ In snapshot mode describe the construct in present tense. In comparison mode nam
 | Identical base and clean tip | Zero historical findings |
 | Missing base or absent merge base | Actionable diagnostic and unsuccessful check |
 | Default selection, excludes, per-path ignores, inline suppression, baseline and configured pytest entry | Follow established engine semantics |
+| Fixture with a test-like name, or a test explicitly disabled using a literal `__test__ = False` | No finding for the excluded definition |
+| Snapshot baseline contains an existing placeholder and a different check in the same function is subsequently replaced | The new comparison finding remains visible |
+| A comparison baseline is written on Python 3.10 and read on Python 3.14 for the same source | The finding matches the existing entry |
+| A comparison uses the value of a short-circuit expression, such as `(value or "fallback") == "ok"` | Replacing that assertion with `assert True` produces one finding |
+| An existing skip decorator changes spelling, or the module rebinds the imported marker | Avoid reporting a newly added unconditional skip when the previous state or marker identity is ambiguous |
+| Git rename across an excluded path | Skip the pair before accessing the old blob |
+| An unrelated plugin raises a configuration error inside its check | Preserve the engine's existing JSON error and continue running other selected rules |
 | Independent review plus two read-only repository trials | Record observed findings and limitations before acceptance |
 
 ## Boundaries and rollback
