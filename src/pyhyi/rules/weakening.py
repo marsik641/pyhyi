@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import builtins
 from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -14,10 +15,33 @@ from pyhyi import git
 from pyhyi.context import MAX_TEXT_BYTES, Context
 from pyhyi.findings import Finding, Severity
 from pyhyi.rules import Rule
+from pyhyi.rules.exception_checks import ExceptionCheck, exception_check
+from pyhyi.rules.predicates import widening
 
 Function = ast.FunctionDef | ast.AsyncFunctionDef
 Imports = dict[str, tuple[str, int]]
 _CASES = {"unittest.TestCase", "unittest.IsolatedAsyncioTestCase"}
+_EXCEPTIONS = {
+    name
+    for name, obj in vars(builtins).items()
+    if isinstance(obj, type) and issubclass(obj, BaseException)
+}
+_UNIT_COMPARISONS = {
+    "assertEqual": ast.Eq,
+    "assertNotEqual": ast.NotEq,
+    "assertIn": ast.In,
+    "assertLess": ast.Lt,
+    "assertLessEqual": ast.LtE,
+    "assertGreater": ast.Gt,
+    "assertGreaterEqual": ast.GtE,
+}
+_UNIT_METHODS = set(_UNIT_COMPARISONS) | {
+    "assertIsNotNone",
+    "assertTrue",
+    "assertFalse",
+    "assertRaises",
+    "assertRaisesRegex",
+}
 
 
 def _test_path(path: str) -> bool:
@@ -97,6 +121,7 @@ def _imports(module: ast.Module, bindings: Counter[str]) -> Imports:
                 "pytest",
                 "pytest.mark",
                 "pytest.fixture",
+                "pytest.raises",
                 *_CASES,
             }:
                 imports[name] = (target, stmt.lineno)
@@ -157,13 +182,55 @@ class _Test:
     skips: list[int]
     unknown_decorators: list[ast.expr]
     equality_method: bool
+    signature: tuple[str, ...]
+    methods: set[str]
+    exceptions: dict[ast.stmt, ExceptionCheck]
+    line: int
+
+
+def _exception_contexts(
+    func: Function, imports: Imports, hidden: set[str], methods: set[str]
+) -> dict[ast.stmt, ExceptionCheck]:
+    contexts = {}
+    pytest_names = {key for key, (target, _) in imports.items() if target == "pytest"} - hidden
+    raises_names = {
+        key for key, (target, _) in imports.items() if target == "pytest.raises"
+    } - hidden
+    if not (pytest_names or raises_names or methods & {"assertRaises", "assertRaisesRegex"}):
+        return contexts
+    names = _EXCEPTIONS - hidden
+    pending: list[ast.AST] = list(reversed(func.body))
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (Function, ast.ClassDef, ast.Lambda)):
+            continue
+        if isinstance(node, (ast.With, ast.Expr)):
+            context = exception_check(
+                node,
+                pytest_names=pytest_names,
+                raises_names=raises_names,
+                builtin_names=names,
+                unittest_methods=methods,
+            )
+            if context is not None:
+                contexts[node] = context
+        pending.extend(reversed(list(ast.iter_child_nodes(node))))
+    return contexts
 
 
 def _methods(
-    body: list[ast.stmt], scope: Counter[str], imports: Imports, *, equality: bool = False
+    body: list[ast.stmt],
+    scope: Counter[str],
+    imports: Imports,
+    module_names: set[str],
+    *,
+    decorator_imports: Imports | None = None,
+    methods: set[str] | None = None,
 ) -> Iterator[tuple[str, _Test]]:
     if "*" in scope:
         return
+    if decorator_imports is None:
+        decorator_imports = imports
     for func in body:
         if (
             not isinstance(func, Function)
@@ -175,7 +242,7 @@ def _methods(
         unknown = []
         for decorator in func.decorator_list:
             expr = decorator.func if isinstance(decorator, ast.Call) else decorator
-            target = _resolve(expr, imports)
+            target = _resolve(expr, decorator_imports)
             if target == "pytest.fixture":
                 break
             if target == "pytest.mark.skip" and (
@@ -190,35 +257,55 @@ def _methods(
                 unknown.append(decorator)
         else:
             args = func.args.posonlyargs + func.args.args
+            local = set(_bindings(func.body))
+            local.update(n.arg for n in ast.walk(func.args) if isinstance(n, ast.arg))
             ordinary = (
-                equality
-                and len(skips) == len(func.decorator_list)
+                methods
+                and not unknown
                 and bool(args)
                 and args[0].arg == "self"
                 and "self" not in _bindings(func.body, count_mutations=False)
             )
-            yield func.name, _Test(func.body, skips, unknown, ordinary)
+            allowed = methods if ordinary else set()
+            try:
+                signature = tuple(ast.dump(n) for n in [func.args, *func.decorator_list])
+            except RecursionError:
+                continue
+            # A module import is expected to bind its own alias. Other module
+            # bindings can shadow built-in exception types.
+            hidden = local | (module_names & _EXCEPTIONS)
+            yield (
+                func.name,
+                _Test(
+                    func.body,
+                    skips,
+                    unknown,
+                    "assertEqual" in allowed,
+                    signature,
+                    allowed,
+                    _exception_contexts(func, imports, hidden, allowed),
+                    func.lineno,
+                ),
+            )
 
 
-def _overrides_equality(cls: ast.ClassDef, scope: Counter[str]) -> bool:
-    if {"assertEqual", "__getattribute__"}.intersection(scope):
-        return True
+def _inherited_methods(cls: ast.ClassDef, scope: Counter[str]) -> set[str]:
+    if "__getattribute__" in scope:
+        return set()
+    methods = _UNIT_METHODS.difference(scope)
     for node in ast.walk(cls):
-        if (
-            isinstance(node, ast.Attribute)
-            and node.attr == "assertEqual"
-            and isinstance(node.ctx, (ast.Store, ast.Del))
-        ):
-            return True
+        if isinstance(node, ast.Attribute) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            methods.discard(node.attr)
         if (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Name)
             and node.func.id in {"setattr", "delattr"}
             and len(node.args) >= 2
-            and (not isinstance(node.args[1], ast.Constant) or node.args[1].value == "assertEqual")
         ):
-            return True
-    return False
+            if not isinstance(node.args[1], ast.Constant):
+                return set()
+            methods.discard(node.args[1].value)
+    return methods
 
 
 def _tests(source: str | None) -> dict[str, _Test]:
@@ -238,7 +325,8 @@ def _tests(source: str | None) -> dict[str, _Test]:
     if "*" in bindings:
         return {}
     imports = _imports(module, bindings)
-    tests = dict(_methods(module.body, bindings, imports))
+    module_names = set(bindings)
+    tests = dict(_methods(module.body, bindings, imports, module_names))
     for cls in module.body:
         if (
             not isinstance(cls, ast.ClassDef)
@@ -256,10 +344,30 @@ def _tests(source: str | None) -> dict[str, _Test]:
             continue
         if not case and {"__init__", "__new__"}.intersection(scope):
             continue
+        try:
+            class_signature = tuple(
+                f"{field}={ast.dump(node)}"
+                for field in ("decorator_list", "bases", "keywords")
+                for node in getattr(cls, field)
+            )
+        except RecursionError:
+            continue
+        # Method decorators see class bindings. Method bodies resolve globals in the module.
         visible = {key: value for key, value in imports.items() if key not in scope}
-        equality = case and not cls.decorator_list and not _overrides_equality(cls, scope)
-        for name, test in _methods(cls.body, scope, visible, equality=equality):
+        # An attribute assignment such as pt.raises = other can mutate the imported object.
+        plain_bindings = _bindings(cls.body, count_mutations=False)
+        body_imports = {k: v for k, v in imports.items() if scope[k] == plain_bindings[k]}
+        known_class = all(
+            _resolve(d.func if isinstance(d, ast.Call) else d, imports)
+            in {"unittest.skip", "unittest.skipIf", "unittest.skipUnless"}
+            for d in cls.decorator_list
+        )
+        methods = _inherited_methods(cls, scope) if case and known_class else set()
+        for name, test in _methods(
+            cls.body, scope, body_imports, module_names, decorator_imports=visible, methods=methods
+        ):
             if name not in local_disabled:
+                test.signature = class_signature + test.signature
                 tests[f"{cls.name}.{name}"] = test
     return {name: test for name, test in tests.items() if name not in disabled}
 
@@ -420,9 +528,172 @@ def _gained_skip(prior: _Test, test: _Test) -> bool:
         return False
 
 
+def _predicate(stmt: ast.stmt, methods: set[str]) -> ast.expr | None:
+    if isinstance(stmt, ast.Assert):
+        return stmt.test
+    if not isinstance(stmt, ast.Expr) or not isinstance(stmt.value, ast.Call):
+        return None
+    call = stmt.value
+    if not isinstance(call.func, ast.Attribute) or _dotted_name(call.func.value) != "self":
+        return None
+    method = call.func.attr
+    if method not in methods or call.keywords or any(isinstance(a, ast.Starred) for a in call.args):
+        return None
+    if method in _UNIT_COMPARISONS and len(call.args) == 2:
+        return ast.Compare(call.args[0], [_UNIT_COMPARISONS[method]()], [call.args[1]])
+    if len(call.args) == 1:
+        value = call.args[0]
+        if method == "assertIsNotNone":
+            return ast.Compare(value, [ast.IsNot()], [ast.Constant(None)])
+        if method == "assertTrue":
+            return value
+        if method == "assertFalse":
+            return ast.UnaryOp(ast.Not(), value)
+    return None
+
+
+def _joint_guard(
+    statements: list[ast.stmt], index: int, methods: set[str]
+) -> tuple[ast.expr, tuple[int, ...]] | None:
+    """Combine consecutive checks on related values before comparing their strength."""
+
+    def names(expr: ast.expr) -> set[str]:
+        return {n.id for n in ast.walk(expr) if isinstance(n, ast.Name)}
+
+    current = _predicate(statements[index], methods)
+    assert current is not None
+    block = {index: current}
+    for direction in (-1, 1):
+        i = index + direction
+        while 0 <= i < len(statements):
+            pred = _predicate(statements[i], methods)
+            if pred is None:
+                break
+            block[i] = pred
+            if len(block) > 32:
+                return None
+            i += direction
+    related = {index}
+    used = names(current)
+    dependencies = {i: names(expr) for i, expr in block.items()}
+    while extra := {i for i, deps in dependencies.items() if i not in related and used & deps}:
+        related.update(extra)
+        for i in extra:
+            used.update(dependencies[i])
+    indices = tuple(sorted(related))
+    if len(indices) == 1:
+        return current, indices
+    return ast.BoolOp(ast.And(), [block[i] for i in indices]), indices
+
+
+def _changed_checks(
+    before: list[ast.stmt],
+    after: list[ast.stmt],
+    old: _Test,
+    new: _Test,
+    trail: str = "",
+    *,
+    assertions: bool = True,
+) -> Iterator[tuple[str, ast.stmt, int, str]]:
+    """Pair local edits only when surrounding setup and control flow agree."""
+    left = [ast.dump(s) for s in before]
+    right = [ast.dump(s) for s in after]
+    if left == right:
+        return
+    if len(before) == len(after):
+        position = {node: i for i, node in enumerate(before)}
+        left_set, right_set = set(left), set(right)
+        pairs = [(a, b) for a, b, x, y in zip(before, after, left, right, strict=True) if x != y]
+        # Reordering assertions or rewriting setup makes positional pairing ambiguous.
+        if len(pairs) > 1 and any(
+            _predicate(a, old.methods) is None
+            or _predicate(b, new.methods) is None
+            or left[position[a]] in right_set
+            or right[position[a]] in left_set
+            for a, b in pairs
+        ):
+            return
+        reported_groups = set()
+        for a, b in pairs:
+            if a in old.exceptions and b in new.exceptions:
+                change = new.exceptions[b].weaker_than(old.exceptions[a])
+                if change:
+                    yield trail, a, new.exceptions[b].lineno, change
+                # An assertion failure inside a raises context can make the outer test pass.
+                continue
+            first, second = _predicate(a, old.methods), _predicate(b, new.methods)
+            if first is not None and second is not None and not _placeholder(b):
+                if not assertions:
+                    continue
+                index = position[a]
+                group_old = _joint_guard(before, index, old.methods)
+                group_new = _joint_guard(after, index, new.methods)
+                if group_old is None or group_new is None:
+                    continue
+                guard_old, indices_old = group_old
+                guard_new, indices_new = group_new
+                if indices_old != indices_new or indices_old in reported_groups:
+                    continue
+                witness = widening(guard_old, guard_new)
+                if witness is not None:
+                    reported_groups.add(indices_old)
+                    yield (
+                        trail,
+                        a,
+                        b.lineno,
+                        (
+                            f"changed '{ast.unparse(guard_old)}' to '{ast.unparse(guard_new)}'; "
+                            f"the new check accepts {witness}, which the old check rejects."
+                        ),
+                    )
+            elif (
+                assertions
+                and isinstance(b, ast.Pass)
+                and first is not None
+                and _has_live_name(first)
+            ):
+                yield trail, a, b.lineno, f"removed the check '{ast.unparse(first)}'."
+            elif isinstance(
+                a, (ast.With, ast.AsyncWith, ast.If, ast.For, ast.AsyncFor, ast.While)
+            ) and type(a) is type(b):
+                # Compare each suite under the same enclosing statement and unchanged header.
+                header = {
+                    k: _predicate_text(v)
+                    for k, v in ast.iter_fields(a)
+                    if k not in {"body", "orelse"}
+                }
+                if all(header[k] == _predicate_text(getattr(b, k)) for k in header):
+                    prefix = f"{trail}/{type(a).__name__}:{header!r}"
+                    for field in ("body", "orelse"):
+                        yield from _changed_checks(
+                            getattr(a, field, []),
+                            getattr(b, field, []),
+                            old,
+                            new,
+                            f"{prefix}/{field}",
+                            assertions=assertions and not isinstance(a, (ast.With, ast.AsyncWith)),
+                        )
+        return
+    if len(before) != len(after) + 1:
+        return
+    idx = next((i for i, (a, b) in enumerate(zip(left, right, strict=False)) if a != b), len(after))
+    if left[idx] in right or left[idx + 1 :] != right[idx:]:
+        return
+    stmt = before[idx]
+    predicate = _predicate(stmt, old.methods)
+    if (
+        assertions
+        and predicate is not None
+        and _has_live_name(predicate)
+        and _static_truth(predicate) is None
+    ):
+        line = after[min(idx, len(after) - 1)].lineno if after else new.line
+        yield trail, stmt, line, f"removed the check '{ast.unparse(predicate)}' from this test."
+
+
 class TestWeakening(Rule):
     id = "test-weakening"
-    summary = "Review unconditional pytest skips and direct placeholder assertions."
+    summary = "Review weaker assertions, exception expectations, removed checks and pytest skips."
     default_enabled = False
     default_options: ClassVar = {"base": ""}
     severity = Severity.ADVICE
@@ -455,6 +726,33 @@ class TestWeakening(Rule):
     def observations(
         self, path: str, name: str, test: _Test, prior: _Test | None = None
     ) -> Iterator[Finding]:
+        if prior is None:
+            for stmt, context in test.exceptions.items():
+                warning = context.broad_warning()
+                if warning:
+                    try:
+                        key = sha256(_predicate_text(stmt).encode()).hexdigest()
+                    except RecursionError:
+                        key = warning
+                    yield self.finding(
+                        f"{name}: {warning}",
+                        path=path,
+                        line=context.lineno,
+                        key=f"{name}:broad:{key}",
+                    )
+        elif test.signature == prior.signature:
+            try:
+                changes = list(_changed_checks(prior.body, test.body, prior, test))
+            except RecursionError:
+                changes = []
+            for trail, stmt, line, change in changes:
+                try:
+                    key = sha256((trail + _predicate_text(stmt) + change).encode()).hexdigest()
+                except RecursionError:
+                    continue
+                yield self.finding(
+                    f"{name}: {change}", path=path, line=line, key=f"diff:{name}:weaker:{key}"
+                )
         if prior is None or _gained_skip(prior, test):
             verb = "gained" if prior else "has"
             for count, line in enumerate(test.skips, 1):

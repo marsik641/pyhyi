@@ -142,15 +142,38 @@ pyhyi check --select test-weakening
 pyhyi check --select test-weakening --base origin/main
 ```
 
-The first command lists direct `assert True` statements and unconditional
-`pytest.mark.skip` decorators in current test files, including eligible
-untracked files. Each finding is advice and on its own leaves the exit code at 0.
+The first command reviews current test files, including eligible untracked files.
+It reports unconditional pytest skip decorators, direct `assert True` statements
+and broad exception expectations such as `with self.assertRaises(Exception):`.
+A broad expectation is a review candidate even when the test makes other checks.
+Each finding is advice and on its own leaves the exit code at 0.
 
 The second command compares changed tracked files in the worktree with the
 merge base of `origin/main` and `HEAD`. On a clean PR checkout this covers the
 net PR change. Git pairs file renames. Both paths must pass the configured
 excludes. Within each pair the rule matches
-unique test names, including the class name for methods. It reports a newly
+unique test names, including the class name for methods.
+
+| Before | After | What the change admits |
+| --- | --- | --- |
+| `assert total == 120` | `assert total > 0` | An integer such as `1` |
+| `assert status in {200, 201}` | `assert status in {200, 201, 404}` | `404` |
+| `assert ready and valid` | `assert ready` | A ready result that fails validation |
+| `with pytest.raises(ValueError)` | `with pytest.raises(Exception)` | Exceptions of other types from the same operation |
+
+The comparator looks for a strict widening over a bounded model of built-in
+values. It checks integer bounds, literal equality and membership, truth tests,
+and combinations with `and`, `or` and `not`. It reports a concrete assignment
+accepted by the new predicate. Merely changing `== 120` to `== 100` changes
+the contract in both directions and produces no widening finding. Recognized
+`unittest` assertions such as `self.assertEqual` and `self.assertIsNotNone`
+participate in the same comparison. The rule can also report a deleted direct
+check, a broader built-in exception type, or a removed message requirement.
+Comparisons cover matched statements and unchanged enclosing control flow.
+The example is evidence about the assertion itself. Fixtures, other tests,
+domain requirements and custom Python operators may affect its significance.
+
+The rule also reports a newly
 added unconditional skip or a single assertion replaced in place by
 `assert True` when the rest of the test body has the same syntax tree.
 The earlier assertion must reference a name in its predicate. For an ordinary
