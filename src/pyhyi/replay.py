@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from pathlib import Path, PureWindowsPath
 from tempfile import TemporaryDirectory
@@ -25,6 +26,10 @@ class Trial:
     selection: str = ""
     assertions: list[dict[str, str]] = field(default_factory=list)
     detail: str = ""
+    exceptions: list[dict[str, str]] = field(default_factory=list)
+
+    def failure_counts(self) -> Counter:
+        return Counter(tuple(sorted(f.items())) for f in (*self.assertions, *self.exceptions))
 
 
 @dataclass
@@ -113,7 +118,7 @@ def _patch(root: Path, fix: str, sources: list[str], hunk: int | None) -> bytes:
     return chunks[0] + chunks[hunk]
 
 
-def _pytest(copy: Path, phase: str, selector: str, timeout: int) -> Trial:
+def _pytest(copy: Path, phase: str, selector: str, timeout: int, sources: list[str]) -> Trial:
     scratch = copy.parent
     output = scratch / "probe.json"
     log = scratch / "pytest.log"
@@ -130,7 +135,7 @@ def _pytest(copy: Path, phase: str, selector: str, timeout: int) -> Trial:
     with log.open("wb") as stream:
         try:
             proc = subprocess.run(
-                [sys.executable, "-B", str(probe), str(output), selector],
+                [sys.executable, "-B", str(probe), str(output), selector, *sources],
                 cwd=copy,
                 env=env,
                 stdout=stream,
@@ -143,7 +148,7 @@ def _pytest(copy: Path, phase: str, selector: str, timeout: int) -> Trial:
     trial = Trial(phase, "inconclusive")
     if output.is_file():
         trial = Trial(phase, **json.loads(output.read_text(encoding="utf-8")))
-        if (proc.returncode, trial.outcome) in {(0, "passed"), (1, "assertion")}:
+        if (proc.returncode, trial.outcome) in {(0, "passed"), (1, "assertion"), (1, "failure")}:
             return trial
     with log.open("rb") as stream:
         stream.seek(max(0, log.stat().st_size - 1600))
@@ -231,7 +236,7 @@ def run(
                     result = Trial(phase, "inconclusive", detail=str(exc))
                     report.trials.append(result)
                     return result
-            result = _pytest(copy, phase, selector, timeout)
+            result = _pytest(copy, phase, selector, timeout, sources)
             report.trials.append(result)
             return result
 
@@ -244,18 +249,19 @@ def run(
     if old.outcome != "passed" or old.count != 1:
         return stop("The historical selector must pass exactly one case on the fix.")
     bad = trial("fix-reversed", fix, test, reverse=True)
-    if bad.outcome != "assertion" or len(bad.assertions) != 1 or old.selection != bad.selection:
-        return stop("Reversing the patch must reproduce one historical assertion on the same case.")
+    if bad.outcome not in {"assertion", "failure"} or old.selection != bad.selection:
+        return stop("Reversing the patch must reproduce a historical failure on the same case.")
+    historical_failures = bad.failure_counts()
     current = trial("head", head, current_test)
     if current.outcome != "passed":
         return stop("The selected current tests did not all pass on clean HEAD.")
     changed = trial("head-reversed", head, current_test, reverse=True)
     if changed.selection != current.selection or changed.outcome == "inconclusive":
         return stop("Could not compare the same current cases with the patch reversed.")
-    if changed.outcome == "assertion":
-        if bad.assertions[0] in changed.assertions:
-            return stop("The historical assertion still catches the reversed patch.", "caught")
-        return stop("The reversed patch failed a different assertion; inspect its evidence.")
+    if changed.outcome in {"assertion", "failure"}:
+        if historical_failures <= changed.failure_counts():
+            return stop("The current selection reproduced every historical failure.", "caught")
+        return stop("The current failures only partially match or differ from the historical ones.")
 
     # A green mutant may be unreachable on HEAD. Recheck the old witness in today's context.
     control = trial("head-witness", head, test, witness_file=True)
@@ -263,9 +269,9 @@ def run(
         return stop("The historical test module is incompatible with clean HEAD.")
     witness_bad = trial("head-reversed-witness", head, test, reverse=True, witness_file=True)
     if (
-        witness_bad.outcome != "assertion"
+        witness_bad.outcome not in {"assertion", "failure"}
         or witness_bad.selection != control.selection
-        or witness_bad.assertions != bad.assertions
+        or witness_bad.failure_counts() != historical_failures
     ):
         return stop("The historical witness no longer demonstrates the same failure on HEAD.")
     return stop(
@@ -348,6 +354,9 @@ def command(root: Path, args: argparse.Namespace) -> int:
             print(f"  {t.phase}: {t.outcome} ({t.count} cases)")
             for failure in t.assertions:
                 print(f"    {failure['test']} | {failure['statement']} | {failure['error']}")
+            for exc in t.exceptions:
+                print(f"    {exc['test']} | {exc['statement']} | {exc['type']}: {exc['error']}")
+                print(f"      {exc['source']} | {exc['origin']}")
             if t.detail:
                 print(t.detail)
     return {"caught": 0, "survived": 1, "inconclusive": 2}[report.status]

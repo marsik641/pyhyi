@@ -35,24 +35,28 @@ directory. The default timeout is 120 seconds per pytest invocation.
 | Trial | Code | Tests | Required observation |
 | --- | --- | --- | --- |
 | 1 | Fix | Historical case | Pass |
-| 2 | Fix with selected patch reversed | Same case | Assertion failure in that test |
+| 2 | Fix with selected patch reversed | Same case | One or more failures in the test body |
 | 3 | HEAD | Current selection | All pass |
-| 4 | HEAD with selected patch reversed | Same selection | Same failure, or all pass |
+| 4 | HEAD with selected patch reversed | Same selection | Reproduce every historical failure, or all pass |
 | 5 and 6, if trial 4 passes | HEAD, then HEAD with the patch reversed | Historical test module and optional historical fixtures on HEAD | Pass, then reproduce the original failure |
 
-The report includes the commit IDs, paths, selectors, counts and assertion
+The report includes the commit IDs, paths, selectors, counts and failure
 evidence. Use `--format json` to save it. The selection fingerprint identifies
 the cases that actually ran. Matching a failure requires the same pytest node
 ID, test source statement and assertion message. Changed diagnostics can
 therefore require manual review.
 
-A `unittest` method with subtests counts as one case. Calibration requires
-one failing assertion and no other errors. If one subtest rejects a bad result
-and another crashes, the report preserves both observations as inconclusive.
+A `unittest` method with subtests counts as one case. Replay records every
+reported assertion failure. It also records exceptions raised in a selected
+production file when the traceback leads back to the test. For these exceptions
+it also compares the exception type, message, source path and raising statement.
+The comparison counts repeated failures and allows subtests to run in a different
+order. A partial match, fixture failure or exception outside the selected
+production files leaves the result inconclusive.
 
 | Outcome | Exit | Interpretation |
 | --- | --- | --- |
-| `caught` | 0 | The current selection still rejects the restored defect at the historical assertion. |
+| `caught` | 0 | The current selection reproduces all recorded historical failures when the defect is restored. |
 | `survived` | 1 | The current selection passes with the defect present, while the historical test still rejects it. Review whether the old contract still applies and whether the selection covers the relevant suite. |
 | `inconclusive` | 2 | A comparison could not establish either result. Inspect the first unexpected trial, for example a conflicting patch, missing dependency, skip, xfail, different assertion or failing fixture. |
 

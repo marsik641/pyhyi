@@ -165,3 +165,51 @@ def test_unittest_subtests_count_as_one_historical_item(repo, capsys):
     code, report = replay((repo, fix), capsys, "--test", CASE + "::BillingTests::test_boundary")
     assert (code, report["status"]) == (0, "caught")
     assert [t["count"] for t in report["trials"]] == [1, 1, 1, 1]
+
+
+@pytest.mark.skipif(pytest.version_tuple < (9,), reason="requires native pytest subtest reports")
+@pytest.mark.parametrize("mode", ["caught", "partial", "survived", "unrelated"])
+def test_replay_compares_all_subtest_failures(repo, capsys, mode):
+    fixed = "def charge(n):\n    if n < 0:\n        raise ValueError('negative')\n    return n\n"
+    repo.commit("feat: bill items", {MODULE: fixed.replace("n < 0", "n > 0")})
+    test = (
+        "from unittest import TestCase\nfrom billing import charge\n\n"
+        "class BillingTests(TestCase):\n"
+        "    def test_boundary(self):\n"
+        "        for n in (1, -1, -1):\n"
+        "            with self.subTest(n=n):\n"
+        "                if n < 0:\n"
+        "                    with self.assertRaises(ValueError):\n"
+        "                        charge(n)\n"
+        "                else:\n"
+        "                    self.assertEqual(charge(n), n)\n"
+    )
+    fix = repo.commit("fix: reject negative quantity", {MODULE: fixed, CASE: test})
+    current = {
+        "caught": test.replace("(1, -1, -1)", "(-1, -1, 1)"),
+        "partial": test.replace("(1, -1, -1)", "(1, -1, 0)"),
+        "survived": test.replace("(1, -1, -1)", "(0, 0, 0)"),
+        "unrelated": test.replace(
+            "self.assertEqual(charge(n), n)",
+            "try:\n                        charge(n)\n"
+            "                    except ValueError as exc:\n"
+            "                        raise RuntimeError('test helper failed') from exc",
+        ),
+    }
+    repo.commit("test: change input cases", {CASE: current[mode]})
+    code, report = replay((repo, fix), capsys, "--test", CASE + "::BillingTests::test_boundary")
+    bad = report["trials"][1]
+    assert len(bad["assertions"]) == 2
+    assert bad["assertions"][0] == bad["assertions"][1]
+    (error,) = bad["exceptions"]
+    assert (error["type"], error["source"], error["origin"]) == (
+        "builtins.ValueError",
+        MODULE,
+        "raise ValueError('negative')",
+    )
+    assert (code, report["status"]) == {
+        "caught": (0, "caught"),
+        "partial": (2, "inconclusive"),
+        "survived": (1, "survived"),
+        "unrelated": (2, "inconclusive"),
+    }[mode]
