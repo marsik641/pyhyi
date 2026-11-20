@@ -123,18 +123,29 @@ def _resolve(expr: ast.expr, imports: Imports) -> str | None:
 def _disabled_tests(body: list[ast.stmt]) -> set[str]:
     """Static __test__ flags in this namespace. An empty name denotes the namespace itself."""
     disabled = set()
-    for stmt in body:
+    pending: list[tuple[ast.AST, bool]] = [(stmt, False) for stmt in reversed(body)]
+    while pending:
+        stmt, conditional = pending.pop()
+        if isinstance(stmt, (ast.ClassDef, Function)):
+            continue
         if isinstance(stmt, ast.Assign):
             targets = stmt.targets
         elif isinstance(stmt, ast.AnnAssign) and stmt.value is not None:
             targets = [stmt.target]
         else:
+            # Compound statements, except handlers and match cases share this namespace.
+            pending.extend(
+                (child, True)
+                for child in ast.iter_child_nodes(stmt)
+                if isinstance(child, (ast.stmt, ast.ExceptHandler, ast.match_case))
+            )
             continue
         for target in targets:
             owner, _, attr = _dotted_name(target).rpartition(".")
             if attr == "__test__":
                 if isinstance(stmt.value, ast.Constant) and stmt.value.value is True:
-                    disabled.discard(owner)
+                    if not conditional:
+                        disabled.discard(owner)
                 else:
                     disabled.add(owner)
     return disabled
@@ -305,7 +316,19 @@ def _has_live_name(expr: ast.expr) -> bool:
         node = pending.pop()
         if isinstance(node, ast.Name):
             return True
-        if isinstance(node, ast.BoolOp) and _static_truth(node) is not None:
+        if isinstance(node, ast.BoolOp):
+            # In a value context the selected operand itself is returned.
+            decisive = isinstance(node.op, ast.Or)
+            for operand in node.values:
+                pending.append(operand)
+                if _static_truth(operand) is decisive:
+                    break
+            continue
+        if (
+            isinstance(node, ast.UnaryOp)
+            and isinstance(node.op, ast.Not)
+            and _static_truth(node) is not None
+        ):
             continue
         if isinstance(node, ast.IfExp):
             condition = _static_truth(node.test)
@@ -317,7 +340,11 @@ def _has_live_name(expr: ast.expr) -> bool:
 
 
 def _prior_check(stmt: ast.stmt, equality: bool) -> str | None:
-    if isinstance(stmt, ast.Assert) and _has_live_name(stmt.test):
+    if (
+        isinstance(stmt, ast.Assert)
+        and _static_truth(stmt.test) is None
+        and _has_live_name(stmt.test)
+    ):
         return "a nonconstant assertion"
     if equality and isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
         call = stmt.value
@@ -354,11 +381,25 @@ def _replacement(old: _Test, new: _Test) -> tuple[int, str] | None:
     return changed
 
 
+def _predicate_text(value: object) -> str:
+    """Encode AST types and named fields consistently, including empty operand lists."""
+    if isinstance(value, ast.AST):
+        fields = (
+            f"{name}={_predicate_text(child)}"
+            for name, child in ast.iter_fields(value)
+            if child is not None or (isinstance(value, ast.Constant) and name == "value")
+        )
+        return f"{type(value).__name__}({', '.join(fields)})"
+    if isinstance(value, list):
+        return "[" + ", ".join(map(_predicate_text, value)) + "]"
+    return repr(value)
+
+
 def _lost_check_key(test: _Test, index: int) -> str:
     """Identify the old predicate and its occurrence among equivalent direct checks."""
     stmt = test.body[index]
     predicates = [
-        ast.dump(node.test if isinstance(node, ast.Assert) else node.value)
+        _predicate_text(node.test if isinstance(node, ast.Assert) else node.value)
         for node in test.body[: index + 1]
         if isinstance(node, (ast.Assert, ast.Expr)) and type(node) is type(stmt)
     ]

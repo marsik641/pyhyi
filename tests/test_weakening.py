@@ -502,3 +502,68 @@ def test_static_short_circuit_is_not_a_lost_check(repo, capsys):
     )
     findings = check(repo, capsys, "--base", "HEAD")["findings"]
     assert [f["message"].split()[0] for f in findings] == ["test_case4", "test_case5"]
+
+
+def test_nested_boolop_returns_a_reachable_operand(repo, capsys):
+    path = "test_result.py"
+    source = dedent("""\
+        def test_result(): assert (value or 'fallback') == 'ok'
+        def test_constant(): assert ('fallback' or value) == 'ok'
+        def test_truth(): assert value or 'fallback'
+        """)
+    repo.commit("test: check returned value", {path: source})
+    repo.write(
+        path,
+        "\n".join(line.partition("assert ")[0] + "assert True" for line in source.splitlines()),
+    )
+    findings = check(repo, capsys, "--base", "HEAD")["findings"]
+    assert [f["message"].split()[0] for f in findings] == ["test_result"]
+
+
+def test_conditional_collection_flags_stay_in_their_scope(repo, capsys):
+    path = "test_collection.py"
+    source = dedent("""\
+        import sys
+        def test_hidden(): assert value
+        def test_visible(): assert value
+        if sys.platform == "win32":
+            test_hidden.__test__ = False
+        else:
+            test_hidden.__test__ = True
+        class TestCases:
+            def test_method(self): assert value
+            if sys.platform == "win32":
+                test_method.__test__ = False
+            def helper(self, test_visible):
+                test_visible.__test__ = False
+        class Helper:
+            def test_visible(self): pass
+            test_visible.__test__ = False
+        """)
+    repo.commit("test: platform-specific collection", {path: source})
+    repo.write(path, source.replace("assert value", "assert True"))
+    for args in [(), ("--base", "HEAD")]:
+        findings = check(repo, capsys, *args)["findings"]
+        assert [f["message"].split()[0] for f in findings] == ["test_visible"]
+
+
+def test_call_predicate_baseline_key_across_python_versions(repo, capsys):
+    path = "test_verify.py"
+    repo.commit(
+        "test: verify value",
+        {
+            path: "def test_verify(): assert verify(value)\n",
+            "pyhyi.toml": 'select = ["test-weakening"]\n[rules.test-weakening]\nbase = "HEAD"\n',
+        },
+    )
+    repo.write(path, "def test_verify(): assert True\n")
+    assert main(["baseline", str(repo.root)]) == 0
+    capsys.readouterr()
+    entries = json.loads((repo.root / ".pyhyi-baseline.json").read_text())["findings"]
+    # Pin the same call fingerprint on every CI interpreter, including 3.10 and 3.14.
+    digest = "f44d129f82424c69ebc3e4691c9bf4203243be174dfbe475add0d70415ec5aa0"
+    assert [f["key"] for f in entries] == [f"diff:test_verify:assert:Assert:{digest}:1"]
+    report = check(repo, capsys)
+    assert report["findings"] == []
+    assert report["summary"]["baselined"] == 1
+    assert report["summary"]["stale_baseline"] == 0
