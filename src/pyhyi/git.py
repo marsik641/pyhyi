@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from pyhyi.errors import GitError
+from pyhyi.errors import ConfigError, GitError
 
 _BASE = ("git", "-c", "core.quotepath=false", "-c", "i18n.logOutputEncoding=utf-8")
 
 
-def run_git(args: list[str], cwd: Path, *, stdin: bytes | None = None) -> str:
-    """Run git and return stdout decoded as UTF-8."""
+def run_git_bytes(args: list[str], cwd: Path, *, stdin: bytes | None = None) -> bytes:
     try:
         proc = subprocess.run(
             [*_BASE, *args], cwd=cwd, input=stdin, capture_output=True, check=False
@@ -24,7 +24,62 @@ def run_git(args: list[str], cwd: Path, *, stdin: bytes | None = None) -> str:
     if proc.returncode != 0:
         detail = proc.stderr.decode("utf-8", "replace").strip()
         raise GitError(f"`git {' '.join(args)}` failed: {detail}")
-    return proc.stdout.decode("utf-8", "replace")
+    return proc.stdout
+
+
+def run_git(args: list[str], cwd: Path, *, stdin: bytes | None = None) -> str:
+    """Run git and return stdout decoded as UTF-8."""
+    return run_git_bytes(args, cwd, stdin=stdin).decode("utf-8", "replace")
+
+
+def comparison_base(root: Path, ref: str) -> str:
+    if not ref.strip() or "\0" in ref:
+        raise ConfigError("test-weakening: base must name a Git revision")
+    try:
+        commit = run_git(["rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}"], root)
+    except GitError as exc:
+        raise ConfigError(f"test-weakening: cannot resolve base {ref!r} to a commit") from exc
+    try:
+        bases = run_git(["merge-base", "--all", commit.strip(), "HEAD"], root).splitlines()
+    except GitError as exc:
+        raise ConfigError(
+            f"test-weakening: no merge base for {ref!r} and HEAD; check refs and fetch history"
+        ) from exc
+    if len(bases) != 1:
+        raise ConfigError(f"test-weakening: expected a single merge base for {ref!r} and HEAD")
+    return bases[0]
+
+
+def changed_blob_pairs(root: Path, base: str) -> Iterator[tuple[str, str, str]]:
+    """Yield old path, current path and base blob ID for modified or renamed regular files."""
+    raw = run_git_bytes(
+        [
+            "diff",
+            "--raw",
+            "-z",
+            "--no-abbrev",
+            "-M",
+            "--diff-filter=MR",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--ignore-submodules=all",
+            base,
+            "--",
+        ],
+        root,
+    )
+    fields = iter(raw.split(b"\0"))
+    for header in fields:
+        if not header:
+            break
+        old_mode, new_mode, blob, _, status = header[1:].split()
+        old = next(fields)
+        new = next(fields) if status.startswith(b"R") else old
+        if old_mode.startswith(b"100") and new_mode.startswith(b"100"):
+            try:
+                yield old.decode(), new.decode(), blob.decode("ascii")
+            except UnicodeDecodeError:
+                continue
 
 
 def find_root(start: Path) -> Path:

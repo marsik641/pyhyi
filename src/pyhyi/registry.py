@@ -12,6 +12,7 @@ from pyhyi.rules.links import BrokenDocLink
 from pyhyi.rules.review import DumpFolder, OrphanFile, StaleDoc
 from pyhyi.rules.suppression import BadSuppression
 from pyhyi.rules.todos import StaleTodo
+from pyhyi.rules.weakening import TestWeakening
 
 ENTRY_POINT_GROUP = "pyhyi.rules"
 
@@ -24,6 +25,7 @@ BUILTIN_RULES: tuple[type[Rule], ...] = (
     DumpFolder,
     OrphanFile,
     StaleDoc,
+    TestWeakening,
 )
 
 

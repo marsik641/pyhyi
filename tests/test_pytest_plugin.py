@@ -116,3 +116,17 @@ def test_bad_config_is_visible(repo: GitRepo) -> None:
     result = run(repo, "-m", "pytest", "-q", "--pyhyi")
     assert result.returncode == pytest.ExitCode.USAGE_ERROR, result.stdout
     assert "unknown key(s): typo" in result.stdout
+
+
+def test_configured_test_weakening_compares_against_base(repo: GitRepo) -> None:
+    repo.commit("test: add example", {"test_demo.py": "def test_demo(): assert value\n"})
+    repo.write("test_demo.py", "def test_demo(): assert True\n")
+    repo.write(
+        "pyproject.toml",
+        '[tool.pyhyi]\nselect = ["test-weakening"]\n'
+        '[tool.pyhyi.rules.test-weakening]\nbase = "HEAD"\n',
+    )
+    result = run(repo, "-m", "pytest", "-q", "--pyhyi")
+    assert result.returncode == 0, result.stdout
+    assert "test_demo replaced a nonconstant assertion with 'assert True'" in result.stdout
+    assert "1 passed" in result.stdout

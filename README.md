@@ -4,7 +4,7 @@ Repository hygiene checker. It catches the mess that autonomous coding agents
 (and hurried humans) leave behind: dump folders, stale docs, broken doc links,
 forgotten TODOs, junk in the repo root, commits that ignore the convention.
 
-> Status: pre-alpha. Five default checks. The main branch also has three opt-in review rules.
+> Status: pre-alpha. Five default checks and four opt-in review rules on the main branch.
 
 ## Idea
 
@@ -89,7 +89,7 @@ pytest --pyhyi
 
 The plugin runs the same check as `pyhyi check` before collection, using
 the Git repository containing pytest's root directory. Tests run even when
-hygiene findings exist. New findings fail an otherwise successful run.
+hygiene findings exist. New blocking findings fail an otherwise successful run.
 The terminal summary includes the findings, suppressions and baseline counts.
 To enable this for every run in a project, append `--pyhyi` to pytest's
 `addopts`.
@@ -134,6 +134,51 @@ span also counts when it identifies a single repository file relative to the
 document or repository root. Dynamic imports and external callers need human review.
 With these rules enabled in configuration, `pytest --pyhyi` removes orphan
 and dump candidates observed during that run from its final report.
+
+### Review changes to Python tests
+
+```sh
+pyhyi check --select test-weakening
+pyhyi check --select test-weakening --base origin/main
+```
+
+The first command lists direct `assert True` statements and unconditional
+`pytest.mark.skip` decorators in current test files, including eligible
+untracked files. Each finding is advice and on its own leaves the exit code at 0.
+
+The second command compares changed tracked files in the worktree with the
+merge base of `origin/main` and `HEAD`. On a clean PR checkout this covers the
+net PR change. Git pairs file renames. Within each pair the rule matches
+unique test names, including the class name for methods. It reports a newly
+added unconditional skip or a single assertion replaced in place by
+`assert True` when the rest of the test body has the same syntax tree.
+The earlier assertion must reference a name in its predicate. For an ordinary
+`unittest` instance method the earlier statement may also be a direct
+`self.assertEqual(actual, expected)` call with a name in at least one operand.
+This comparison requires an instance method with a `self` receiver and
+an unambiguous inherited assertion method. Unmatched tests and ambiguous edits
+supply no comparison finding.
+
+Discovery covers `test_*.py` and `*_test.py`, top-level sync or async functions
+whose names start with `test`, and direct test methods. It recognizes plain
+`Test*` classes without bases or a custom constructor, and classes of any name
+with a single directly imported `unittest.TestCase` or
+`unittest.IsolatedAsyncioTestCase` base. Module-level imports may use aliases.
+The rule does not run collection, follow project-specific inheritance, or
+infer skips from fixtures, class markers, or conditional decorators.
+
+To use the same comparison in `pytest --pyhyi`, select the rule in configuration
+and set its base. The CLI's `--base` overrides that value. An unavailable ref
+or missing common ancestor fails the check. In shallow CI checkouts, fetch
+enough history for Git to find the common ancestor.
+
+```toml
+[tool.pyhyi]
+select = ["test-weakening"]
+
+[tool.pyhyi.rules.test-weakening]
+base = "origin/main"
+```
 
 ## Configuration
 

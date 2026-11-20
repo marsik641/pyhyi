@@ -10,6 +10,7 @@ import argparse
 import contextlib
 import sys
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from pathlib import Path
 
 from pyhyi import __version__, baseline, engine, git, report
@@ -50,6 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--ignore", type=_id_list, default=(), metavar="IDS", help="comma-separated rules to skip"
     )
     check.add_argument("--no-baseline", action="store_true", help="report baselined issues as well")
+    check.add_argument("--base", metavar="REF", help="compare test-weakening against a Git ref")
 
     base = sub.add_parser(
         "baseline", help="record current issues so that only new ones fail the check"
@@ -83,6 +85,9 @@ def _print_errors(result: engine.Result) -> None:
 
 def cmd_check(args: argparse.Namespace) -> int:
     root, config = _open_repo(args.path)
+    if args.base is not None:
+        options = {**config.rules.get("test-weakening", {}), "base": args.base}
+        config = replace(config, rules={**config.rules, "test-weakening": options})
     result = engine.run(
         root,
         config,

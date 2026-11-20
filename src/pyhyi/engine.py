@@ -118,6 +118,8 @@ def run(
         rule = cls(resolve_options(cls, config))
         try:
             produced = list(rule.check(ctx))
+        except ConfigError:
+            raise
         except Exception:
             result.errors.append(RuleError(cls.id, traceback.format_exc()))
             continue
