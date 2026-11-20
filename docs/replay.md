@@ -46,6 +46,10 @@ the cases that actually ran. Matching a failure requires the same pytest node
 ID, test source statement and assertion message. Changed diagnostics can
 therefore require manual review.
 
+A `unittest` method with subtests counts as one case. Calibration requires
+one failing assertion and no other errors. If one subtest rejects a bad result
+and another crashes, the report preserves both observations as inconclusive.
+
 | Outcome | Exit | Interpretation |
 | --- | --- | --- |
 | `caught` | 0 | The current selection still rejects the restored defect at the historical assertion. |

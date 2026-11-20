@@ -244,8 +244,8 @@ def run(
     if old.outcome != "passed" or old.count != 1:
         return stop("The historical selector must pass exactly one case on the fix.")
     bad = trial("fix-reversed", fix, test, reverse=True)
-    if bad.outcome != "assertion" or old.selection != bad.selection:
-        return stop("Reversing the selected patch did not reproduce a historical test assertion.")
+    if bad.outcome != "assertion" or len(bad.assertions) != 1 or old.selection != bad.selection:
+        return stop("Reversing the patch must reproduce one historical assertion on the same case.")
     current = trial("head", head, current_test)
     if current.outcome != "passed":
         return stop("The selected current tests did not all pass on clean HEAD.")
@@ -262,7 +262,11 @@ def run(
     if control.outcome != "passed" or control.selection != old.selection:
         return stop("The historical test module is incompatible with clean HEAD.")
     witness_bad = trial("head-reversed-witness", head, test, reverse=True, witness_file=True)
-    if witness_bad.outcome != "assertion" or witness_bad.assertions != bad.assertions:
+    if (
+        witness_bad.outcome != "assertion"
+        or witness_bad.selection != control.selection
+        or witness_bad.assertions != bad.assertions
+    ):
         return stop("The historical witness no longer demonstrates the same failure on HEAD.")
     return stop(
         "Current selection passed a defect still rejected by the historical test.", "survived"

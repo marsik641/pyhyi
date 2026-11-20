@@ -62,7 +62,8 @@ def main() -> int:
         ],
         plugins=[probe],
     )
-    count = len(probe.calls)
+    # Pytest can emit several call reports for one unittest item with subtests.
+    count = len(set(probe.calls))
     if not probe.other and count and code == 0 and not probe.assertions:
         outcome = "passed"
     elif not probe.other and code == 1 and probe.assertions:

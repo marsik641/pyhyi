@@ -149,3 +149,19 @@ def test_one_hunk_restores_only_its_own_behavior(repo, capsys):
     code, result = replay((repo, fix), capsys, "--hunk", "1")
     assert (code, result["status"]) == (0, "caught")
     assert result["trials"][1]["assertions"][0]["statement"] == "assert charge(5) == 10"
+
+
+def test_unittest_subtests_count_as_one_historical_item(repo, capsys):
+    repo.commit("feat: charge", {MODULE: FIXED.replace(">=", ">")})
+    test = (
+        "from unittest import TestCase\nfrom billing import charge\n\n"
+        "class BillingTests(TestCase):\n"
+        "    def test_boundary(self):\n"
+        "        for n in (5, 6):\n"
+        "            with self.subTest(n=n):\n"
+        "                self.assertEqual(charge(n), 10)\n"
+    )
+    fix = repo.commit("fix: charge at threshold", {MODULE: FIXED, CASE: test})
+    code, report = replay((repo, fix), capsys, "--test", CASE + "::BillingTests::test_boundary")
+    assert (code, report["status"]) == (0, "caught")
+    assert [t["count"] for t in report["trials"]] == [1, 1, 1, 1]
