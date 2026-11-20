@@ -335,3 +335,170 @@ def test_symlink_parent_cannot_escape(repo, capsys, tmp_path, monkeypatch):
     monkeypatch.setattr(Context, "read_text", no_read)
     assert check(repo, capsys)["findings"] == []
     assert check(repo, capsys, "--base", "HEAD")["findings"] == []
+
+
+@pytest.mark.parametrize("args", [(), ("--base", "HEAD")], ids=["snapshot", "comparison"])
+def test_collection_opt_outs_and_fixtures(repo, capsys, args):
+    module = dedent("""\
+        import pytest as pt
+        from pytest import fixture as resource
+        @pt.fixture()
+        def test_sample(): assert value
+        @resource
+        def test_input(): assert value
+        module_fixture = resource(scope="module")
+        @module_fixture
+        def test_shared_input(): assert value
+        new_fixture = pt.fixture
+        @new_fixture()
+        def test_extra_input(): assert value
+        class TestHidden:
+            __test__: bool = False
+            def test_class(self): assert value
+        def test_disabled(): assert value
+        test_disabled.__test__ = False
+        class TestMethods:
+            def test_hidden(self): assert value
+            def test_visible(self): assert value
+        TestMethods.test_hidden.__test__ = False
+        """)
+    files = {"test_collection.py": module, "test_module.py": "__test__ = False\n" + module}
+    repo.commit("test: add collection examples", files)
+    for path, source in files.items():
+        repo.write(path, source.replace("assert value", "assert True"))
+    findings = check(repo, capsys, *args)["findings"]
+    assert [(f["path"], f["message"].split()[0]) for f in findings] == [
+        ("test_collection.py", "TestMethods.test_visible")
+    ]
+
+
+@pytest.mark.parametrize("kind", ["assert", "skip"])
+def test_snapshot_baseline_preserves_new_comparison_findings(repo, capsys, kind):
+    path = "test_checks.py"
+    config = 'select = ["test-weakening"]\n'
+    base = "import pytest\ndef test_value():\n    assert value\n    assert True\n"
+    changed = (
+        base.replace("assert value", "assert True")
+        if kind == "assert"
+        else base.replace("def test_value", "@pytest.mark.skip\ndef test_value")
+    )
+    repo.commit("test: original", {path: base, "pyhyi.toml": config})
+    # For a skip, record a snapshot of the current marker before comparing.
+    if kind == "skip":
+        repo.write(path, changed)
+    assert main(["baseline", str(repo.root)]) == 0
+    capsys.readouterr()
+    repo.write(path, changed)
+    report = check(repo, capsys, "--base", "HEAD")
+    assert len(report["findings"]) == 1
+    assert report["summary"]["baselined"] == 0
+    repo.write("pyhyi.toml", config + '[rules.test-weakening]\nbase = "HEAD"\n')
+    assert main(["baseline", str(repo.root)]) == 0
+    capsys.readouterr()
+    repo.write(path, "\n" + changed)
+    report = check(repo, capsys)
+    assert report["findings"] == []
+    assert report["summary"]["baselined"] == 1
+
+
+def test_diff_baseline_identifies_the_prior_predicate(repo, capsys):
+    path = "test_sample.py"
+    config = 'select = ["test-weakening"]\n[rules.test-weakening]\nbase = "HEAD"\n'
+    first = "def test_value(): assert size > 10\n"
+    current = "def test_value(): assert True\n"
+    repo.commit("test: minimum size", {path: first, "pyhyi.toml": config})
+    repo.write(path, current)
+    assert main(["baseline", str(repo.root)]) == 0
+    capsys.readouterr()
+    repo.write(path, first.replace("size > 10", "(size>10)"))
+    repo.git("commit", "-qam", "style: reformat predicate")
+    repo.write(path, current)
+    assert check(repo, capsys)["summary"]["baselined"] == 1
+    repo.write(path, first.replace("size > 10", "size < 20"))
+    repo.git("commit", "-qam", "test: maximum size")
+    repo.write(path, current)
+    assert len(check(repo, capsys)["findings"]) == 1
+
+
+def test_skip_rewrite_and_addition_next_to_unknown_decorator(repo, capsys):
+    path = "test_marks.py"
+    original = dedent("""\
+        import pytest
+        skip_always = pytest.mark.skip(reason="example")
+        @skip_always
+        def test_rewrite(): pass
+        @wrapper
+        def test_add(): pass
+        @pytest.mark.skipif(enabled, reason="conditional")
+        def test_unconditional(): pass
+        """)
+    repo.commit("test: decorators", {path: original})
+    changed = original.replace("@skip_always", '@pytest.mark.skip(reason="example")')
+    changed = changed.replace("@wrapper", "@pytest.mark.skip\n@wrapper").replace(
+        'pytest.mark.skipif(enabled, reason="conditional")', "pytest.mark.skip"
+    )
+    repo.write(path, changed)
+    findings = check(repo, capsys, "--base", "HEAD")["findings"]
+    assert [f["message"].split()[0] for f in findings] == ["test_add", "test_unconditional"]
+
+
+def test_global_rebinding_invalidates_skip_import(repo, capsys):
+    path = "test_globals.py"
+    source = dedent("""\
+        from pytest import mark
+        class Mark:
+            def skip(self, func): return func
+        def install():
+            global mark
+            mark = Mark()
+        install()
+        def test_mark(): pass
+        """)
+    repo.commit("test: local marker", {path: source})
+    repo.write(path, source.replace("def test_mark", "@mark.skip\ndef test_mark"))
+    for args in [(), ("--base", "HEAD")]:
+        assert check(repo, capsys, *args)["findings"] == []
+    readable = source.replace("mark = Mark()", "return mark")
+    repo.write(path, readable.replace("def test_mark", "@mark.skip\ndef test_mark"))
+    assert len(check(repo, capsys)["findings"]) == 1
+
+
+def test_rename_from_excluded_path_skips_base_blob(repo, capsys, monkeypatch):
+    source = "def test_value():\n    value = calculate()\n    assert value\n"
+    repo.commit(
+        "test: sample", {"vendor/test_source.py": source, "pyhyi.toml": 'exclude=["vendor"]'}
+    )
+    repo.git("mv", "vendor/test_source.py", "test_dest.py")
+    repo.write("test_dest.py", source.replace("assert value", "assert True"))
+    base = repo.git("rev-parse", "HEAD").strip()
+    pairs = list(git.changed_blob_pairs(repo.root, base))
+    assert [(old, new) for old, new, _ in pairs] == [("vendor/test_source.py", "test_dest.py")]
+    original_git = git.run_git_bytes
+
+    def check_command(args, *a, **kw):
+        assert args[0] != "cat-file", args
+        return original_git(args, *a, **kw)
+
+    monkeypatch.setattr(git, "run_git_bytes", check_command)
+    assert check(repo, capsys, "--base", "HEAD")["findings"] == []
+
+
+def test_static_short_circuit_is_not_a_lost_check(repo, capsys):
+    predicates = [
+        "True or missing",
+        "False and missing",
+        "not (True or missing)",
+        "missing or True",
+        "True and value",
+        "value or False",
+        "(True or missing) == True",
+        "True if True else missing",
+    ]
+    base = "".join(f"def test_case{i}(): assert {expr}\n" for i, expr in enumerate(predicates))
+    repo.commit("test: predicates", {"test_bool.py": base})
+    repo.write(
+        "test_bool.py",
+        "".join(f"def test_case{i}(): assert True\n" for i in range(len(predicates))),
+    )
+    findings = check(repo, capsys, "--base", "HEAD")["findings"]
+    assert [f["message"].split()[0] for f in findings] == ["test_case4", "test_case5"]

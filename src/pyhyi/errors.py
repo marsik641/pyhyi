@@ -9,5 +9,9 @@ class ConfigError(PyhyiError):
     """Invalid pyhyi configuration."""
 
 
+class ComparisonBaseError(ConfigError):
+    """The requested comparison has no usable Git base."""
+
+
 class GitError(PyhyiError):
     """A git command failed or git is unavailable."""

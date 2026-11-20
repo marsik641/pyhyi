@@ -16,7 +16,7 @@ from typing import Any
 from pyhyi import baseline
 from pyhyi.config import Config
 from pyhyi.context import Context
-from pyhyi.errors import ConfigError
+from pyhyi.errors import ComparisonBaseError, ConfigError
 from pyhyi.findings import Finding, Severity
 from pyhyi.paths import PathMatcher
 from pyhyi.rules import Rule, resolve_options
@@ -118,7 +118,7 @@ def run(
         rule = cls(resolve_options(cls, config))
         try:
             produced = list(rule.check(ctx))
-        except ConfigError:
+        except ComparisonBaseError:
             raise
         except Exception:
             result.errors.append(RuleError(cls.id, traceback.format_exc()))

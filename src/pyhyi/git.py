@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from pyhyi.errors import ConfigError, GitError
+from pyhyi.errors import ComparisonBaseError, GitError
 
 _BASE = ("git", "-c", "core.quotepath=false", "-c", "i18n.logOutputEncoding=utf-8")
 
@@ -34,19 +34,23 @@ def run_git(args: list[str], cwd: Path, *, stdin: bytes | None = None) -> str:
 
 def comparison_base(root: Path, ref: str) -> str:
     if not ref.strip() or "\0" in ref:
-        raise ConfigError("test-weakening: base must name a Git revision")
+        raise ComparisonBaseError("test-weakening: base must name a Git revision")
     try:
         commit = run_git(["rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}"], root)
     except GitError as exc:
-        raise ConfigError(f"test-weakening: cannot resolve base {ref!r} to a commit") from exc
+        raise ComparisonBaseError(
+            f"test-weakening: cannot resolve base {ref!r} to a commit"
+        ) from exc
     try:
         bases = run_git(["merge-base", "--all", commit.strip(), "HEAD"], root).splitlines()
     except GitError as exc:
-        raise ConfigError(
+        raise ComparisonBaseError(
             f"test-weakening: no merge base for {ref!r} and HEAD; check refs and fetch history"
         ) from exc
     if len(bases) != 1:
-        raise ConfigError(f"test-weakening: expected a single merge base for {ref!r} and HEAD")
+        raise ComparisonBaseError(
+            f"test-weakening: expected a single merge base for {ref!r} and HEAD"
+        )
     return bases[0]
 
 

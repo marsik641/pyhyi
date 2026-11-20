@@ -10,6 +10,9 @@ import pytest
 
 from pyhyi import __version__
 from pyhyi.cli import main
+from pyhyi.errors import ConfigError
+from pyhyi.rules import Rule
+from pyhyi.rules.suppression import BadSuppression
 
 if TYPE_CHECKING:
     from conftest import GitRepo
@@ -94,6 +97,23 @@ def test_config_error_exits_2(repo: GitRepo, capsys: pytest.CaptureFixture[str])
     repo.write("pyhyi.toml", "bogus = true\n")
     assert main(["check", str(repo.root)]) == 2
     assert "pyhyi: error: pyhyi.toml: unknown key(s): bogus" in capsys.readouterr().err
+
+
+def test_plugin_config_error_preserves_json_and_later_rules(repo, capsys, monkeypatch):
+    class BrokenPlugin(Rule):
+        id = "a-plugin"
+
+        def check(self, ctx):
+            raise ConfigError("invalid plugin setting")
+
+    registry = {rule.id: rule for rule in [BrokenPlugin, BadSuppression]}
+    monkeypatch.setattr("pyhyi.cli.load_rules", lambda: registry)
+    repo.commit("test: sample", {"sample.py": BAD_LINE})
+    assert main(["check", str(repo.root), "--format", "json"]) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert [f["rule"] for f in report["findings"]] == ["bad-suppression"]
+    assert [e["rule"] for e in report["errors"]] == ["a-plugin"]
+    assert "invalid plugin setting" in report["errors"][0]["traceback"]
 
 
 def test_not_a_repo(tmp_path: Path, git_env: None, capsys: pytest.CaptureFixture[str]) -> None:

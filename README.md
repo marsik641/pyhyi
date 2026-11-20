@@ -148,7 +148,8 @@ untracked files. Each finding is advice and on its own leaves the exit code at 0
 
 The second command compares changed tracked files in the worktree with the
 merge base of `origin/main` and `HEAD`. On a clean PR checkout this covers the
-net PR change. Git pairs file renames. Within each pair the rule matches
+net PR change. Git pairs file renames. Both paths must pass the configured
+excludes. Within each pair the rule matches
 unique test names, including the class name for methods. It reports a newly
 added unconditional skip or a single assertion replaced in place by
 `assert True` when the rest of the test body has the same syntax tree.
@@ -157,13 +158,17 @@ The earlier assertion must reference a name in its predicate. For an ordinary
 `self.assertEqual(actual, expected)` call with a name in at least one operand.
 This comparison requires an instance method with a `self` receiver and
 an unambiguous inherited assertion method. Unmatched tests and ambiguous edits
-supply no comparison finding.
+supply no comparison finding. Snapshot and comparison findings use distinct
+baseline keys. A comparison key for a replaced assertion identifies the prior
+predicate, so a different lost check in the same test remains visible.
 
 Discovery covers `test_*.py` and `*_test.py`, top-level sync or async functions
 whose names start with `test`, and direct test methods. It recognizes plain
 `Test*` classes without bases or a custom constructor, and classes of any name
 with a single directly imported `unittest.TestCase` or
 `unittest.IsolatedAsyncioTestCase` base. Module-level imports may use aliases.
+Discovery skips pytest fixtures and honors explicit `__test__ = False` flags
+on modules, classes, and individual tests.
 The rule does not run collection, follow project-specific inheritance, or
 infer skips from fixtures, class markers, or conditional decorators.
 
