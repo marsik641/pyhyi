@@ -208,6 +208,25 @@ select = ["test-weakening"]
 base = "origin/main"
 ```
 
+### Replay a historical Python defect
+
+`pyhyi replay --list` searches Git history for candidate fixes and shows the
+changed source and test files. To check a candidate, run pyhyi in the project's
+pytest environment and select the production change and its regression test.
+For example, in this repository:
+
+```sh
+pyhyi replay --fix 8f308f9 --source src/pyhyi/references.py \
+  --test tests/test_review.py::test_orphan_file_recognizes_documented_paths
+```
+
+The command runs the selected test on the fixing commit and on committed
+`HEAD`, each with and without the fix. A `survived` result means the selected
+current tests passed with the defect restored and the historical test still
+reproduced its original failure on today's code. To check the whole current
+test directory, add `--current-test tests`. See [replay](docs/replay.md) for
+evidence, exit codes and limits.
+
 ## Configuration
 
 Settings live in the repository root, in the first file found of

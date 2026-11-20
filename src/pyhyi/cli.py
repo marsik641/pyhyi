@@ -53,6 +53,28 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--no-baseline", action="store_true", help="report baselined issues as well")
     check.add_argument("--base", metavar="REF", help="compare test-weakening against a Git ref")
 
+    replay = sub.add_parser(
+        "replay", help="reintroduce a historical fix's defect in scratch clones"
+    )
+    _add_path(replay)
+    action = replay.add_mutually_exclusive_group(required=True)
+    action.add_argument("--list", action="store_true", help="list candidate fix commits")
+    action.add_argument("--fix", metavar="REF", help="single-parent fix reachable from HEAD")
+    replay.add_argument(
+        "--source", action="append", help="changed production .py file (repeatable)"
+    )
+    replay.add_argument("--hunk", type=int, help="replay one numbered diff hunk of a single file")
+    replay.add_argument("--test", help="historical pytest node ID that demonstrates the defect")
+    replay.add_argument(
+        "--fixture",
+        action="append",
+        default=[],
+        help="historical test support file to restore with the witness (repeatable)",
+    )
+    replay.add_argument("--current-test", help="current pytest node ID or test directory")
+    replay.add_argument("--timeout", type=int, default=120, help="seconds per pytest invocation")
+    replay.add_argument("--format", choices=("text", "json"), default="text")
+
     base = sub.add_parser(
         "baseline", help="record current issues so that only new ones fail the check"
     )
@@ -159,12 +181,20 @@ def cmd_rules(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_replay(args: argparse.Namespace) -> int:
+    from pyhyi.replay import command
+
+    root, _ = _open_repo(args.path)
+    return command(root, args)
+
+
 COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "check": cmd_check,
     "commit-msg": cmd_commit_msg,
     "fix": cmd_fix,
     "baseline": cmd_baseline,
     "rules": cmd_rules,
+    "replay": cmd_replay,
 }
 
 
