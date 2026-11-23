@@ -4,11 +4,15 @@ from pyhyi.cli import main
 
 
 def inspect(repo, capsys, rule):
+    return {f["path"] for f in findings(repo, capsys, rule)}
+
+
+def findings(repo, capsys, rule):
     assert main(["check", str(repo.root), "--select", rule, "--format", "json"]) == 0
     result = json.loads(capsys.readouterr().out)
     assert result["errors"] == []
     assert all(f["severity"] == "advice" for f in result["findings"])
-    return {f["path"] for f in result["findings"]}
+    return result["findings"]
 
 
 def test_dump_folder_requires_repeated_additions_and_no_consumer(repo, capsys):
@@ -19,14 +23,91 @@ def test_dump_folder_requires_repeated_additions_and_no_consumer(repo, capsys):
     assert inspect(repo, capsys, "dump-folder") == set()
 
 
-def test_stale_doc_requires_both_signals_and_skips_local_edits(repo, capsys, monkeypatch):
+def test_stale_doc_file_history_requires_explicit_opt_in(repo, capsys, monkeypatch):
     monkeypatch.setenv("GIT_COMMITTER_DATE", "2020-01-01T00:00:00Z")
     repo.commit("docs: usage", {"README.md": "[api](src/api.py)", "src/api.py": "x = 0"})
     for n in range(1, 4):
         monkeypatch.setenv("GIT_COMMITTER_DATE", f"2020-02-0{n}T00:00:00Z")
         repo.commit("feat: change api", {"src/api.py": f"x = {n}"})
+    assert inspect(repo, capsys, "stale-doc") == set()
+    repo.write("pyhyi.toml", "[rules.stale-doc]\nfile-history = true\n")
     assert inspect(repo, capsys, "stale-doc") == {"README.md"}
     repo.write("README.md", "Updated [api](src/api.py)")
+    assert inspect(repo, capsys, "stale-doc") == set()
+
+
+def test_stale_doc_reports_changed_quoted_declarations_after_one_commit(repo, capsys):
+    doc = (
+        "# API\n\n"
+        "The [implementation](src/api.py) defines `PAGE_LIMIT = 5` "
+        "and `def search(query: str, limit: int = 5)`.\n"
+    )
+    repo.commit(
+        "docs: quote declarations",
+        {
+            "README.md": doc,
+            "src/api.py": "PAGE_LIMIT: int = 5\ndef search(query: str, limit: int = 5): ...\n",
+        },
+    )
+    repo.commit(
+        "feat: change the page size",
+        {"src/api.py": "PAGE_LIMIT = 8\ndef search(query: str, limit: int = 8): ...\n"},
+    )
+    result = findings(repo, capsys, "stale-doc")
+    assert [finding["line"] for finding in result] == [3, 3]
+    assert [finding["message"] for finding in result] == [
+        "src/api.py changed from `PAGE_LIMIT = 5` to `PAGE_LIMIT = 8` "
+        "after this declaration was documented.",
+        "src/api.py changed from `def search(query: str, limit: int=5)` to "
+        "`def search(query: str, limit: int=8)` after this declaration was documented.",
+    ]
+    repo.write("src/api.py", "PAGE_LIMIT = 5\ndef search(query: str, limit: int = 5): ...\n")
+    assert inspect(repo, capsys, "stale-doc") == set()
+    repo.commit("fix: restore the original declarations")
+    assert inspect(repo, capsys, "stale-doc") == set()
+
+
+def test_stale_doc_skips_unrelated_edits_and_unverified_claims(repo, capsys):
+    repo.commit(
+        "docs: describe the API",
+        {
+            "README.md": (
+                "The [implementation](src/api.py) declares `PAGE_LIMIT = 5`, "
+                "`def search(query: str)` and mentions `MAX_RETRIES = 100`.\n"
+            ),
+            "src/api.py": (
+                "PAGE_LIMIT = 5\nMAX_RETRIES = 6\ndef search(query: str): return query\n"
+            ),
+        },
+    )
+    repo.commit(
+        "feat: clean up results",
+        {
+            "src/api.py": (
+                "PAGE_LIMIT: int = 0x5\nMAX_RETRIES = 7\n"
+                "def search(query: str): return query.strip()\n"
+            ),
+        },
+    )
+    assert inspect(repo, capsys, "stale-doc") == set()
+
+
+def test_stale_doc_skips_ambiguous_sources_and_bindings(repo, capsys):
+    repo.commit(
+        "docs: describe the API",
+        {
+            "README.md": (
+                "A shared limit `PAGE_LIMIT = 5` applies in [a.py](a.py) and [b.py](b.py).\n\n"
+                "There is a [retry limit](a.py) called `MAX_RETRIES = 2`.\n"
+            ),
+            "a.py": "PAGE_LIMIT = 5\nMAX_RETRIES = 2\n",
+            "b.py": "PAGE_LIMIT = 5\n",
+        },
+    )
+    repo.commit(
+        "feat: adjust the limits",
+        {"a.py": "PAGE_LIMIT = 8\nMAX_RETRIES = 9\nif flag:\n    MAX_RETRIES = 2\n"},
+    )
     assert inspect(repo, capsys, "stale-doc") == set()
 
 

@@ -14,6 +14,7 @@ from pyhyi.errors import ConfigError
 from pyhyi.findings import Finding, Severity
 from pyhyi.references import SOURCE_SUFFIXES
 from pyhyi.rules import Rule
+from pyhyi.rules.doc_contracts import documentation_drift
 from pyhyi.rules.links import MARKDOWN_SUFFIXES, link_targets, local_path
 
 _DAY = 86400
@@ -39,7 +40,7 @@ class ReviewRule(Rule):
     def __init__(self, options: Mapping[str, Any] | None = None) -> None:
         super().__init__(options)
         for option, value in self.options.items():
-            if value < 1:
+            if type(value) is int and value < 1:
                 raise ConfigError(f"rules.{self.id}.{option} must be positive")
 
 
@@ -82,10 +83,24 @@ class DumpFolder(ReviewRule):
 
 class StaleDoc(ReviewRule):
     id = "stale-doc"
-    summary = "Review documents whose linked source files changed repeatedly after the document."
-    default_options: ClassVar = {"min-days": 30, "min-commits": 3}
+    summary = "Review quoted declarations that changed in linked source after the document."
+    default_options: ClassVar = {"file-history": False, "min-days": 30, "min-commits": 3}
 
     def check(self, ctx: Context) -> Iterator[Finding]:
+        if self.options["file-history"]:
+            yield from self._file_history_candidates(ctx)
+            return
+        for drift in documentation_drift(ctx):
+            yield self.finding(
+                f"{drift.target} changed from `{drift.documented}` to `{drift.current}` "
+                "after this declaration was documented.",
+                path=drift.document,
+                line=drift.line,
+                key=f"{drift.target}:{drift.name}",
+                hint="Review the quoted declaration against the linked source.",
+            )
+
+    def _file_history_candidates(self, ctx: Context) -> Iterator[Finding]:
         for doc in ctx.files:
             if (
                 not doc.lower().endswith(MARKDOWN_SUFFIXES)
@@ -113,7 +128,7 @@ class StaleDoc(ReviewRule):
                 seen.add(target)
                 yield self.finding(
                     f"Review {target}: {len(changes)} later source changes over {days} days. "
-                    "Score 2/2: change count and elapsed time exceed the thresholds.",
+                    "File history meets the configured review thresholds.",
                     path=doc,
                     line=line,
                     key=target,

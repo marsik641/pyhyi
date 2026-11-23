@@ -138,8 +138,20 @@ successful. They use committed history and skip shallow clones.
 | Rule | Why a candidate appears | Options |
 | --- | --- | --- |
 | `dump-folder` | A directory accumulates numbered dump, export, report or snapshot files, each changed once, across several commits. A detected reference to the directory or its contents clears the candidate. | `min-files` (5), `min-commits` (3) |
-| `stale-doc` | A source file linked by a Markdown document changed repeatedly after the document's last committed edit. | `min-days` (30), `min-commits` (3) |
+| `stale-doc` | A quoted Python declaration in Markdown matched the linked source at the document's last commit and differs at HEAD. | `file-history` (false), `min-days` (30), `min-commits` (3) |
 | `orphan-file` | An old Python or JS/TS module has a scratch, backup, obsolete or unused name and no detected local consumer. | `min-days` (30) |
+
+`stale-doc` checks inline code such as `PAGE_LIMIT = 20` or
+`def search(query: str, limit: int = 20)` in a paragraph with a single local
+source target. It compares unambiguous module-level Python declarations.
+One committed change is enough. The finding shows the documented and current
+declarations. It skips local edits to either file.
+
+For a manual review of whole files, set `file-history = true` under
+`[rules.stale-doc]` in `pyhyi.toml` or `[tool.pyhyi.rules.stale-doc]` in
+`pyproject.toml`. That mode reports linked files with at least `min-commits`
+commits after the document and a gap of at least `min-days` from the
+document's last edit to the file's latest change.
 
 The reference scan for orphan files and dump folders uses Python's AST, literal
 JS/TS paths, Markdown links and manifest strings. A path in a Markdown code
