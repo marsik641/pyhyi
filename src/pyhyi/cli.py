@@ -51,7 +51,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--ignore", type=_id_list, default=(), metavar="IDS", help="comma-separated rules to skip"
     )
     check.add_argument("--no-baseline", action="store_true", help="report baselined issues as well")
-    check.add_argument("--base", metavar="REF", help="compare test-weakening against a Git ref")
+    check.add_argument(
+        "--base",
+        metavar="REF",
+        help="compare test weakening and complexity growth against a Git ref",
+    )
 
     replay = sub.add_parser(
         "replay", help="reintroduce a historical fix's defect in scratch clones"
@@ -108,8 +112,10 @@ def _print_errors(result: engine.Result) -> None:
 def cmd_check(args: argparse.Namespace) -> int:
     root, config = _open_repo(args.path)
     if args.base is not None:
-        options = {**config.rules.get("test-weakening", {}), "base": args.base}
-        config = replace(config, rules={**config.rules, "test-weakening": options})
+        options = dict(config.rules)
+        for rule in ("test-weakening", "complexity-growth"):
+            options[rule] = {**options.get(rule, {}), "base": args.base}
+        config = replace(config, rules=options)
     result = engine.run(
         root,
         config,

@@ -32,30 +32,35 @@ def run_git(args: list[str], cwd: Path, *, stdin: bytes | None = None) -> str:
     return run_git_bytes(args, cwd, stdin=stdin).decode("utf-8", "replace")
 
 
-def comparison_base(root: Path, ref: str) -> str:
+def comparison_base(root: Path, ref: str, *, rule: str = "test-weakening") -> str:
     if not ref.strip() or "\0" in ref:
-        raise ComparisonBaseError("test-weakening: base must name a Git revision")
+        raise ComparisonBaseError(f"{rule}: base must name a Git revision")
     try:
         commit = run_git(["rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}"], root)
     except GitError as exc:
-        raise ComparisonBaseError(
-            f"test-weakening: cannot resolve base {ref!r} to a commit"
-        ) from exc
+        raise ComparisonBaseError(f"{rule}: cannot resolve base {ref!r} to a commit") from exc
     try:
         bases = run_git(["merge-base", "--all", commit.strip(), "HEAD"], root).splitlines()
     except GitError as exc:
         raise ComparisonBaseError(
-            f"test-weakening: no merge base for {ref!r} and HEAD; check refs and fetch history"
+            f"{rule}: no merge base for {ref!r} and HEAD; check refs and fetch history"
         ) from exc
     if len(bases) != 1:
-        raise ComparisonBaseError(
-            f"test-weakening: expected a single merge base for {ref!r} and HEAD"
-        )
+        raise ComparisonBaseError(f"{rule}: expected a single merge base for {ref!r} and HEAD")
     return bases[0]
 
 
-def changed_blob_pairs(root: Path, base: str) -> Iterator[tuple[str, str, str]]:
-    """Yield old path, current path and base blob ID for modified or renamed regular files."""
+@dataclass(frozen=True)
+class BlobChange:
+    old_path: str
+    new_path: str
+    old_blob: str | None
+    new_blob: str | None
+    status: str
+
+
+def blob_changes(root: Path, base: str, target: str | None = None) -> Iterator[BlobChange]:
+    """Compare two trees (or a tree and the worktree), retaining regular-file blob IDs."""
     raw = run_git_bytes(
         [
             "diff",
@@ -63,11 +68,12 @@ def changed_blob_pairs(root: Path, base: str) -> Iterator[tuple[str, str, str]]:
             "-z",
             "--no-abbrev",
             "-M",
-            "--diff-filter=MR",
+            *(["--diff-filter=MR"] if target is None else []),
             "--no-ext-diff",
             "--no-textconv",
             "--ignore-submodules=all",
             base,
+            *([target] if target is not None else []),
             "--",
         ],
         root,
@@ -76,14 +82,26 @@ def changed_blob_pairs(root: Path, base: str) -> Iterator[tuple[str, str, str]]:
     for header in fields:
         if not header:
             break
-        old_mode, new_mode, blob, _, status = header[1:].split()
+        old_mode, new_mode, old_blob, new_blob, status = header[1:].split()
         old = next(fields)
-        new = next(fields) if status.startswith(b"R") else old
-        if old_mode.startswith(b"100") and new_mode.startswith(b"100"):
-            try:
-                yield old.decode(), new.decode(), blob.decode("ascii")
-            except UnicodeDecodeError:
-                continue
+        new = next(fields) if status[:1] in {b"R", b"C"} else old
+        try:
+            yield BlobChange(
+                old.decode(),
+                new.decode(),
+                old_blob.decode("ascii") if old_mode.startswith(b"100") else None,
+                new_blob.decode("ascii") if new_mode.startswith(b"100") else None,
+                chr(status[0]),
+            )
+        except UnicodeDecodeError:
+            continue
+
+
+def changed_blob_pairs(root: Path, base: str) -> Iterator[tuple[str, str, str]]:
+    """Yield old path, current path and base blob ID for modified or renamed regular files."""
+    for change in blob_changes(root, base):
+        if change.status in {"M", "R"} and change.old_blob and change.new_blob:
+            yield change.old_path, change.new_path, change.old_blob
 
 
 def find_root(start: Path) -> Path:

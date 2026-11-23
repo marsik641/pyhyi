@@ -154,6 +154,29 @@ The adapters recognize selected syntax in Python and JS/TS, and Vue consumers
 of display helpers. Unmatched expressions, dynamic dispatch, and other languages
 can produce no findings even when their behavior differs.
 
+### Review growing Python functions
+
+```sh
+pyhyi check --select complexity-growth
+pyhyi check --select complexity-growth --base origin/main
+```
+
+With Ruff on `PATH`, this opt-in check compares McCabe complexity (Ruff C901)
+across the last 50 first-parent transitions ending at committed `HEAD`. By
+default it reports a function as advice after at least three increases in
+separate commits, a net increase of at least five and a final complexity of at
+least twelve. Each finding shows the scores and commit IDs. Edits that leave
+the score unchanged preserve the series. A reduction, missing function or
+ambiguous definition ends it.
+
+Functions are matched by qualified name within the same file, following Python
+file renames detected by Git. The rule uses the available history in shallow
+clones. It skips sources that the running Python or Ruff cannot parse and
+ignores uncommitted edits. `--base` further limits findings to functions that
+grew relative to the merge base of the given ref and `HEAD`. The rule also
+accepts `base`, `max-commits`, `min-increases`, `min-growth` and
+`min-complexity` in `[tool.pyhyi.rules.complexity-growth]`.
+
 ### Review changes to Python tests
 
 ```sh

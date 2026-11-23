@@ -8,6 +8,7 @@ from pyhyi.errors import ConfigError
 from pyhyi.rules import Rule, validate_rule_class
 from pyhyi.rules.calculation_drift import CalculationDrift
 from pyhyi.rules.commits import CommitConvention
+from pyhyi.rules.complexity_growth import ComplexityGrowth
 from pyhyi.rules.layout import RootClutter
 from pyhyi.rules.links import BrokenDocLink
 from pyhyi.rules.review import DumpFolder, OrphanFile, StaleDoc
@@ -22,6 +23,7 @@ BUILTIN_RULES: tuple[type[Rule], ...] = (
     BrokenDocLink,
     CalculationDrift,
     CommitConvention,
+    ComplexityGrowth,
     RootClutter,
     StaleTodo,
     DumpFolder,
