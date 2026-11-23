@@ -21,7 +21,9 @@ are stored anywhere.
 
 The `Release` workflow checks that the tag matches `__version__`, builds pyhyi
 and the aliases, and publishes each package in its own job and environment
-`pypi-<package>`. A failed publish job can be re-run from the Actions page.
+`pypi-<package>`. Once all PyPI jobs succeed, it creates a GitHub Release with
+generated release notes for the existing tag. If a job fails, use **Re-run failed
+jobs** from the Actions page.
 
 ## Trusted publisher settings
 
