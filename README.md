@@ -4,7 +4,7 @@ Repository hygiene checker. It catches the mess that autonomous coding agents
 (and hurried humans) leave behind: dump folders, stale docs, broken doc links,
 forgotten TODOs, junk in the repo root, commits that ignore the convention.
 
-> Status: pre-alpha. Five default checks and four opt-in review rules on the main branch.
+> Status: pre-alpha. Five default checks and five opt-in review rules on the main branch.
 
 ## Idea
 
@@ -134,6 +134,25 @@ span also counts when it identifies a single repository file relative to the
 document or repository root. Dynamic imports and external callers need human review.
 With these rules enabled in configuration, `pytest --pyhyi` removes orphan
 and dump candidates observed during that run from its final report.
+
+### Compare calculations
+
+Run `pyhyi check --select calculation-drift` to review places where two
+implementations may disagree. Add `--format json` for machine-readable findings.
+The check reads source and eligible JSON files without importing or executing the
+project. Each finding is advice and includes the location of the other evidence.
+
+| Observation | What to verify |
+| --- | --- |
+| Two simple predicates have matching function or output-field names and corresponding operands, but one includes equality. | Try the reported boundary value. Confirm that both callers promise the same behavior. |
+| Two matching Python functions round the same sequence at different stages of a sum. | Try the reported list of numbers. Check which stage owns rounding in the shared contract. |
+| JS and Python use different rounding operations in matching scaled sums or step-rounding helpers. | The report gives a modeled numeric input and both results. Check that the actual callers can supply the input and step. |
+| A JS/TS function returns validation status and calculated fields also found on a Python validation path. A size guard on that path compares two width/height pairs, and only one pair appears in direct property reads on the JS side. | Check for delegated validation and verify whether both sides should accept the same dimensions. |
+| A JS/TS display helper limits fractional digits for a range of increments. A literal call, or a call using two record fields plus a JSON example, supplies a value that loses precision. | Check whether the display promises that precision. A matching JSON record alone does not establish the route that delivered a value to the UI. |
+
+The adapters recognize selected syntax in Python and JS/TS, and Vue consumers
+of display helpers. Unmatched expressions, dynamic dispatch, and other languages
+can produce no findings even when their behavior differs.
 
 ### Review changes to Python tests
 

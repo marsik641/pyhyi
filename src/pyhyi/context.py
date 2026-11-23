@@ -69,9 +69,11 @@ class Context:
             return True
         return norm in self._file_set or norm in self._dir_set
 
-    def read_text(self, path: str) -> str | None:
+    def read_text(self, path: str, *, cache: bool = True) -> str | None:
         """File content as text, or None for binary, non-UTF-8 or huge files."""
         if path not in self._text:
+            if not cache:
+                return self._load_text(path)
             self._text[path] = self._load_text(path)
         return self._text[path]
 

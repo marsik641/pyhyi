@@ -6,6 +6,7 @@ from importlib.metadata import entry_points
 
 from pyhyi.errors import ConfigError
 from pyhyi.rules import Rule, validate_rule_class
+from pyhyi.rules.calculation_drift import CalculationDrift
 from pyhyi.rules.commits import CommitConvention
 from pyhyi.rules.layout import RootClutter
 from pyhyi.rules.links import BrokenDocLink
@@ -19,6 +20,7 @@ ENTRY_POINT_GROUP = "pyhyi.rules"
 BUILTIN_RULES: tuple[type[Rule], ...] = (
     BadSuppression,
     BrokenDocLink,
+    CalculationDrift,
     CommitConvention,
     RootClutter,
     StaleTodo,
