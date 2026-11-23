@@ -32,12 +32,22 @@ Requires Python 3.10+ and `git` on `PATH`.
 
 ## Usage
 
+```sh ci=check
+pyhyi check
+```
+
+```sh ci=json
+pyhyi check --format json
+```
+
 ```sh
-pyhyi check                 # check the repository containing the current directory
-pyhyi check path/to/repo --format json
+pyhyi check path/to/repo
 pyhyi check --select rule-a,rule-b --ignore rule-c
 pyhyi baseline              # record current issues; only new ones fail afterwards
-pyhyi rules                 # list available rules
+```
+
+```sh ci=rules
+pyhyi rules
 ```
 
 Exit codes: `0` no issues, `1` issues found, `2` usage, configuration or
@@ -84,6 +94,9 @@ Install the pytest extra in your project's test environment:
 
 ```sh
 python -m pip install "pyhyi[pytest]>=0.2.0"
+```
+
+```sh ci=pytest
 pytest --pyhyi
 ```
 
@@ -364,6 +377,10 @@ uv run ruff check .
 uv run ruff format --check .
 uv run pyhyi check
 ```
+
+CI runs README fences marked `sh ci=<name>` with the built wheel and a temporary
+consumer repository. Each marked fence contains one command. Its expected
+output is checked by `scripts/check_readme_examples.py`.
 
 Releases are described in [docs/releasing.md](https://github.com/marsik641/pyhyi/blob/main/docs/releasing.md).
 

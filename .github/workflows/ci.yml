@@ -38,6 +38,15 @@ jobs:
           path: restored/
       # uv writes a local .gitignore alongside each pair of distributions.
       - run: diff -qr --exclude=.gitignore dist restored
+      - name: Run marked README examples against the wheel
+        shell: bash
+        run: |
+          venv="$RUNNER_TEMP/pyhyi-readme"
+          wheels=(restored/pyhyi/*.whl)
+          test "${#wheels[@]}" -eq 1
+          uv venv "$venv"
+          uv pip install --python "$venv/bin/python" "${wheels[0]}[pytest]"
+          "$venv/bin/python" -I scripts/check_readme_examples.py README.md
 
   integrations:
     runs-on: ubuntu-latest
