@@ -4,7 +4,7 @@ Repository hygiene checker. It catches the mess that autonomous coding agents
 (and hurried humans) leave behind: dump folders, stale docs, broken doc links,
 forgotten TODOs, junk in the repo root, commits that ignore the convention.
 
-> Status: pre-alpha. Five default checks and five opt-in review rules on the main branch.
+> Status: pre-alpha. Version 0.3.0 includes five default checks and five opt-in review rules.
 
 ## Idea
 
@@ -46,22 +46,22 @@ internal error.
 pyhyi scans tracked files plus untracked files that are not git-ignored, so
 junk is caught before it is committed.
 
-### Repair Markdown links (on main)
+### Repair Markdown links
 
 Run `pyhyi fix --dry-run` to preview each file, line and destination. Run
 `pyhyi fix` to apply the edits. The command repairs case mismatches and
 unambiguous Git renames, preserving titles, queries and fragments. It
 respects the check's configured selection, ignores, suppressions and baseline.
 
-### pre-commit and GitHub Actions (on main)
+### pre-commit and GitHub Actions
 
-Add both hooks to `.pre-commit-config.yaml`. Set `rev` to a commit containing
-the hooks. Install them with `pre-commit install -t pre-commit -t commit-msg`.
+Add both hooks to `.pre-commit-config.yaml` and install them with
+`pre-commit install -t pre-commit -t commit-msg`.
 
 ```yaml
 repos:
   - repo: https://github.com/marsik641/pyhyi
-    rev: <commit-sha>
+    rev: v0.3.0
     hooks:
       - id: pyhyi
       - id: pyhyi-commit-msg
@@ -75,7 +75,7 @@ steps:
   - uses: actions/checkout@v7
     with:
       fetch-depth: 0
-  - uses: marsik641/pyhyi@<commit-sha>
+  - uses: marsik641/pyhyi@v0.3.0
 ```
 
 ### Run with pytest
@@ -116,7 +116,7 @@ The five checks below are enabled by default. Run `pyhyi rules` to see all avail
 
 On an existing repository, start with `pyhyi baseline` so that only new issues fail.
 
-### Cleanup candidates (on main)
+### Cleanup candidates
 
 Run `pyhyi check --select dump-folder,stale-doc,orphan-file` to get a review
 list. These opt-in rules report their evidence and leave the exit status
