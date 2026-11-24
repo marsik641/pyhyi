@@ -4,7 +4,7 @@ Repository hygiene checker. It catches the mess that autonomous coding agents
 (and hurried humans) leave behind: dump folders, stale docs, broken doc links,
 forgotten TODOs, junk in the repo root, commits that ignore the convention.
 
-> Status: pre-alpha. Version 0.3.0 includes five default checks and five opt-in review rules.
+> Status: pre-alpha. Version 0.3.1 includes five default checks and six opt-in review rules.
 
 ## Idea
 
@@ -111,7 +111,7 @@ If you already use the pre-commit framework, add its two hooks to
 ```yaml
 repos:
   - repo: https://github.com/marsik641/pyhyi
-    rev: v0.3.0
+    rev: v0.3.1
     hooks:
       - id: pyhyi
       - id: pyhyi-commit-msg
@@ -125,7 +125,7 @@ steps:
   - uses: actions/checkout@v7
     with:
       fetch-depth: 0
-  - uses: marsik641/pyhyi@v0.3.0
+  - uses: marsik641/pyhyi@v0.3.1
 ```
 
 ### Run with pytest
