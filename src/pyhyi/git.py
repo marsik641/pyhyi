@@ -78,6 +78,20 @@ def blob_changes(root: Path, base: str, target: str | None = None) -> Iterator[B
         ],
         root,
     )
+    yield from _parse_blob_changes(raw)
+
+
+def hook_blob_changes(root: Path, commit: str | None = None) -> Iterator[BlobChange]:
+    """Read a commit's changes or the index prepared for the current commit."""
+    options = ["--raw", "-z", "--no-renames", "--no-abbrev", "--ignore-submodules=all"]
+    if commit is None:
+        args = ["diff", "--cached", "--no-ext-diff", "--no-textconv", *options]
+    else:
+        args = ["diff-tree", "--root", "--no-commit-id", "-r", *options, commit]
+    yield from _parse_blob_changes(run_git_bytes([*args, "--"], root))
+
+
+def _parse_blob_changes(raw: bytes) -> Iterator[BlobChange]:
     fields = iter(raw.split(b"\0"))
     for header in fields:
         if not header:

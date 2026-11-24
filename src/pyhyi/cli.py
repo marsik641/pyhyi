@@ -13,7 +13,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from pyhyi import __version__, baseline, engine, git, report
+from pyhyi import __version__, baseline, engine, git, hooks, report
 from pyhyi.config import Config, load_config
 from pyhyi.errors import PyhyiError
 from pyhyi.registry import load_rules
@@ -88,8 +88,12 @@ def build_parser() -> argparse.ArgumentParser:
     _add_path(fix)
     fix.add_argument("--dry-run", action="store_true", help="preview changes")
 
-    message = sub.add_parser("commit-msg", help="check a proposed Git commit message")
+    message = sub.add_parser("commit-msg", help="check a proposed Git commit")
     message.add_argument("message_file", type=Path)
+    push = sub.add_parser("pre-push", help="check documentation for outgoing Git commits")
+    push.add_argument("remote", help="Git remote name. Ref updates are read from stdin.")
+    install = sub.add_parser("install-hooks", help="install local commit-msg and pre-push hooks")
+    _add_path(install)
     sub.add_parser("rules", help="list available rules")
     return parser
 
@@ -161,20 +165,29 @@ def cmd_commit_msg(args: argparse.Namespace) -> int:
     root, config = _open_repo(".")
     registry = load_rules()
     engine.validate_config(config, registry)
-    if CommitConvention not in engine.select_rules(registry, config):
+    if hooks.merge_in_progress(root):
         return EXIT_OK
-    merge_head = git.run_git(["rev-parse", "--git-path", "MERGE_HEAD"], root).strip()
-    if (root / merge_head).is_file():
-        return EXIT_OK
-    message = git.run_git(
-        ["stripspace", "--strip-comments"], root, stdin=args.message_file.read_bytes()
-    )
-    subject = message.partition("\n")[0]
-    options = resolve_options(CommitConvention, config)
-    problem = subject_problem(subject, tuple(options["types"]))
-    if problem:
-        print(f"commit-convention: proposed subject {problem}: {subject!r}", file=sys.stderr)
-        return EXIT_ISSUES
+    raw_message = args.message_file.read_bytes()
+    message = git.run_git_bytes(["stripspace", "--strip-comments"], root, stdin=raw_message)
+    if CommitConvention in engine.select_rules(registry, config):
+        subject = message.decode("utf-8", "replace").partition("\n")[0]
+        options = resolve_options(CommitConvention, config)
+        problem = subject_problem(subject, tuple(options["types"]))
+        if problem:
+            print(f"commit-convention: proposed subject {problem}: {subject!r}", file=sys.stderr)
+            return EXIT_ISSUES
+    return EXIT_OK if hooks.check_staged(root, message) else EXIT_ISSUES
+
+
+def cmd_pre_push(args: argparse.Namespace) -> int:
+    root = git.find_root(Path.cwd())
+    return EXIT_OK if hooks.check_push(root, args.remote, sys.stdin) else EXIT_ISSUES
+
+
+def cmd_install_hooks(args: argparse.Namespace) -> int:
+    root, _ = _open_repo(args.path)
+    for path in hooks.install(root):
+        print(f"Git hook ready: {path}")
     return EXIT_OK
 
 
@@ -197,6 +210,8 @@ def cmd_replay(args: argparse.Namespace) -> int:
 COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "check": cmd_check,
     "commit-msg": cmd_commit_msg,
+    "pre-push": cmd_pre_push,
+    "install-hooks": cmd_install_hooks,
     "fix": cmd_fix,
     "baseline": cmd_baseline,
     "rules": cmd_rules,

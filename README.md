@@ -63,9 +63,49 @@ Run `pyhyi fix --dry-run` to preview each file, line and destination. Run
 unambiguous Git renames, preserving titles, queries and fragments. It
 respects the check's configured selection, ignores, suppressions and baseline.
 
+### Git hooks
+
+Run `pyhyi install-hooks` from the virtual environment where pyhyi is installed
+to enable local `commit-msg` and `pre-push` hooks. The hooks keep using that
+environment. Installation leaves existing hooks and custom `core.hooksPath`
+settings alone. To integrate with an existing shell hook, call `pyhyi commit-msg "$1"`
+or `pyhyi pre-push "$1"` as appropriate and propagate its exit status. The pre-push
+command reads Git's ref updates from stdin.
+
+The commit message hook checks the commit subject using the configured
+`commit-convention` rule. To also request documentation review, map source paths
+to exact repository-relative document paths in `pyhyi.toml`:
+
+```toml
+[doc-map]
+"src/widgets/**" = ["docs/widgets.md", "README.md"]
+"src/cli.py" = ["docs/cli.md"]
+```
+
+In `pyproject.toml`, use `[tool.pyhyi.doc-map]`. The mapping uses the same glob
+syntax as `exclude`. For each changed source path, a content change to any of
+its mapped documents satisfies the check. If the existing documentation still
+applies, record which page you reviewed and why it needs no change:
+
+```sh
+git commit -m "refactor: share widget lookup" \
+  --trailer "Docs-Unchanged: docs/widgets.md: The public widget configuration is unchanged"
+```
+
+Repeat `--trailer` when other changed paths require a different page. The commit
+hook reads the index Git prepared for the commit. Unstaged documentation does
+not count.
+For branches whose new tip enables the map, the push hook checks outgoing
+non-merge commits against each commit's own map. It uses the remote's previous
+tip for existing branches and excludes commits reachable from locally known
+tracking refs for new branches.
+Commits without a map are skipped. Fetch first if an existing remote tip is
+missing locally. Tags and branch deletions are outside this check.
+
 ### pre-commit and GitHub Actions
 
-Add both hooks to `.pre-commit-config.yaml` and install them with
+If you already use the pre-commit framework, add its two hooks to
+`.pre-commit-config.yaml` and install them with
 `pre-commit install -t pre-commit -t commit-msg`.
 
 ```yaml

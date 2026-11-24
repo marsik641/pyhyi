@@ -6,7 +6,7 @@
   always_run: true
   stages: [pre-commit]
 - id: pyhyi-commit-msg
-  name: Check the proposed commit subject
+  name: Check the commit subject and configured documentation
   entry: pyhyi commit-msg
   language: python
   stages: [commit-msg]
