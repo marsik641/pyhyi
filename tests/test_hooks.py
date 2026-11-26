@@ -78,6 +78,25 @@ def test_push_checks_actual_outgoing_commit_and_accepts_persisted_note(repo, tmp
     repo.git("push", str(remote), "another:refs/heads/direct")
 
 
+def test_push_to_url_skips_commits_already_on_a_remote(repo, tmp_path):
+    repo.commit("chore: configure hook", {SOURCE: "value = 1\n", DOC: "Guide\n", CONFIG: MAP})
+    remote = tmp_path / "remote.git"
+    repo.git("init", "--bare", str(remote))
+    repo.git("remote", "add", "origin", str(remote))
+    repo.commit("refactor: change value", {SOURCE: "value = 2\n"})
+    repo.git("push", "-u", "origin", "main")
+    assert main(["install-hooks", str(repo.root)]) == 0
+
+    mirror = tmp_path / "mirror.git"
+    repo.git("init", "--bare", str(mirror))
+    repo.git("push", str(mirror), "main")
+    repo.write(SOURCE, "value = 3\n")
+    repo.git("commit", "--no-verify", "-qam", "refactor: change again")
+    blocked = git_result(repo, "push", str(mirror), "main:refs/heads/next")
+    assert blocked.returncode != 0
+    assert blocked.stderr.count("doc-map: review documentation for outgoing") == 1
+
+
 def test_installer_preserves_an_existing_hook_and_custom_hook_dir(repo, capsys):
     original = repo.write(".git/hooks/pre-push", "#!/bin/sh\nexit 0\n")
     assert main(["install-hooks", str(repo.root)]) == 2

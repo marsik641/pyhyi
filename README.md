@@ -97,8 +97,8 @@ hook reads the index Git prepared for the commit. Unstaged documentation does
 not count.
 For branches whose new tip enables the map, the push hook checks outgoing
 non-merge commits against each commit's own map. It uses the remote's previous
-tip for existing branches and excludes commits reachable from locally known
-tracking refs for new branches.
+tip for existing branches. For new branches it excludes commits reachable from
+the remote's tracking refs, or from any tracking ref when pushing to a URL.
 Commits without a map are skipped. Fetch first if an existing remote tip is
 missing locally. Tags and branch deletions are outside this check.
 

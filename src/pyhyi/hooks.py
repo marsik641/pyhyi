@@ -129,11 +129,13 @@ def check_push(root: Path, remote_name: str, lines: Iterable[str]) -> bool:
     for local, remote in updates:
         if not configs[local].doc_map:
             continue
-        exclusions = []
         if remote.strip("0"):
             exclusions = [f"^{remote}"]
         elif tracked_remote:
             exclusions = ["--not", f"--remotes={remote_name}"]
+        else:
+            # A URL has no tracking refs of its own: skip commits any remote already has.
+            exclusions = ["--not", "--remotes"]
         commits = git.run_git(["rev-list", "--no-merges", local, *exclusions, "--"], root)
         outgoing.update(dict.fromkeys(commits.splitlines()))
     passed = True
