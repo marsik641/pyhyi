@@ -34,7 +34,8 @@ immutable.
    Preview the release notes with `python scripts/release_notes.py X.Y.Z`.
 2. Bump `__version__` in `src/pyhyi/__init__.py`, update the `rev` and action
    versions in `docs/integrations.md`, and commit as `chore: release X.Y.Z`.
-3. Make sure CI is green on `main` (the `build` job builds every package).
+3. Make sure CI is green on `main`. The tests require a changelog section for
+   `__version__`, and the `build` job builds every package.
 4. Tag and push:
 
    ```sh

@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from pyhyi import __version__
+
 ROOT = Path(__file__).resolve().parent.parent
 _spec = importlib.util.spec_from_file_location(
     "release_notes", ROOT / "scripts" / "release_notes.py"
@@ -39,6 +41,11 @@ def test_section_stops_at_the_next_version() -> None:
 def test_missing_section_is_an_error(version: str) -> None:
     with pytest.raises(LookupError, match=version):
         release_notes.section(CHANGELOG, version)
+
+
+def test_changelog_describes_the_package_version() -> None:
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert release_notes.section(changelog, __version__)
 
 
 def test_empty_section_is_an_error() -> None:
