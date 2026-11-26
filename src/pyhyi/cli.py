@@ -160,7 +160,7 @@ def cmd_fix(args: argparse.Namespace) -> int:
 
 def cmd_commit_msg(args: argparse.Namespace) -> int:
     from pyhyi.rules import resolve_options
-    from pyhyi.rules.commits import CommitConvention, subject_problem
+    from pyhyi.rules.commits import CommitConvention, is_autosquash, subject_problem
 
     root, config = _open_repo(".")
     registry = load_rules()
@@ -172,7 +172,10 @@ def cmd_commit_msg(args: argparse.Namespace) -> int:
     if CommitConvention in engine.select_rules(registry, config):
         subject = message.decode("utf-8", "replace").partition("\n")[0]
         options = resolve_options(CommitConvention, config)
-        problem = subject_problem(subject, tuple(options["types"]))
+        # `git commit --fixup` is fine locally; `check` reports it once published.
+        problem = (
+            None if is_autosquash(subject) else subject_problem(subject, tuple(options["types"]))
+        )
         if problem:
             print(f"commit-convention: proposed subject {problem}: {subject!r}", file=sys.stderr)
             return EXIT_ISSUES

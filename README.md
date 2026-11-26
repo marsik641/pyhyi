@@ -161,7 +161,7 @@ The five checks below are enabled by default. Run `pyhyi rules` to see all avail
 
 | Rule | What it reports | Options |
 | --- | --- | --- |
-| `commit-convention` | Commit subjects that do not follow [Conventional Commits](https://www.conventionalcommits.org/). Merge commits and git's own `Revert "..."` subjects are skipped; `fixup!`/`squash!` commits are reported. | `types` (default: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert), `since` (a date; older commits are skipped) |
+| `commit-convention` | Commit subjects that do not follow [Conventional Commits](https://www.conventionalcommits.org/). Merge commits and git's own `Revert "..."` subjects are skipped. `fixup!`/`squash!`/`amend!` commits are reported once a remote-tracking branch contains them; the commit message hook accepts them. | `types` (default: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert), `since` (a date; older commits are skipped) |
 | `root-clutter` | Files in the repository root other than well-known project files (README, LICENSE, CHANGELOG, manifests, lockfiles, tool configs, environment templates) and source code. Catches stray reports, dumps, logs, screenshots and committed `.env` files. | `allow` (extra glob patterns) |
 | `broken-doc-link` | Relative links in Markdown that point to paths not tracked by git, with a hint when git history shows the file was renamed or the letter case differs. External URLs and code blocks are ignored. | — |
 | `stale-todo` | TODO, FIXME, HACK and XXX at the start of a comment that are older than `max-age-days` according to `git blame`. Uncommitted lines are ignored; in Markdown only `<!-- -->` comments count. | `markers`, `max-age-days` (default: 14) |

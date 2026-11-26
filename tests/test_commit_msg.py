@@ -13,6 +13,13 @@ def test_proposed_subject_uses_git_cleanup_and_config(repo, monkeypatch):
     assert main(["commit-msg", str(path)]) == 0
 
 
+def test_autosquash_subjects_are_accepted(repo, monkeypatch):
+    monkeypatch.chdir(repo.root)
+    for prefix in ("fixup!", "squash!", "amend!"):
+        path = repo.write(".git/COMMIT_EDITMSG", f"{prefix} legacy subject\n")
+        assert main(["commit-msg", str(path)]) == 0
+
+
 def test_empty_subject_and_merge(repo, monkeypatch):
     monkeypatch.chdir(repo.root)
     path = repo.write(".git/COMMIT_EDITMSG", "# comments only\n")

@@ -75,6 +75,15 @@ def test_commit_convention_on_history(repo: GitRepo) -> None:
     assert all(f.path is None and f.line is None for f in result.findings)
 
 
+def test_commit_convention_reports_fixups_once_published(repo: GitRepo) -> None:
+    repo.commit("feat: real work", {"a.txt": "1"})
+    fixup = repo.commit("fixup! feat: real work", {"a.txt": "2"})
+    assert run_rule(repo, "commit-convention").findings == []
+    repo.git("update-ref", "refs/remotes/origin/main", "HEAD")
+    (finding,) = run_rule(repo, "commit-convention").findings
+    assert finding.key == fixup and "fixup/squash" in finding.message
+
+
 def test_commit_convention_skips_merges(repo: GitRepo) -> None:
     repo.commit("chore: base", {"a.txt": "1"})
     repo.git("checkout", "--quiet", "-b", "side")

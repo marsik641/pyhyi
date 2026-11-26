@@ -7,6 +7,7 @@ from collections.abc import Iterator, Mapping
 from datetime import date
 from typing import Any, ClassVar
 
+from pyhyi import git
 from pyhyi.context import Context
 from pyhyi.errors import ConfigError
 from pyhyi.findings import Finding
@@ -27,11 +28,17 @@ DEFAULT_TYPES = (
 )
 
 _SUBJECT = re.compile(r"(?P<type>[^\s(:!]+)(?:\((?P<scope>[^()]*)\))?(?P<bang>!)?: (?P<desc>.*)\Z")
+_AUTOSQUASH = ("fixup!", "squash!", "amend!")
+
+
+def is_autosquash(subject: str) -> bool:
+    """Whether `git rebase --autosquash` is meant to fold this commit into another."""
+    return subject.startswith(_AUTOSQUASH)
 
 
 def subject_problem(subject: str, types: tuple[str, ...]) -> str | None:
     """What is wrong with a commit subject, or None if it is fine."""
-    if subject.startswith(("fixup!", "squash!", "amend!")):
+    if is_autosquash(subject):
         return "is a fixup/squash commit left in the history"
     if subject.startswith('Revert "'):  # git's own revert message
         return None
@@ -67,6 +74,7 @@ class CommitConvention(Rule):
 
     def check(self, ctx: Context) -> Iterator[Finding]:
         types = tuple(self.options["types"])
+        unpublished: set[str] | None = None
         for commit in ctx.commits:
             if commit.is_merge:
                 continue
@@ -75,6 +83,16 @@ class CommitConvention(Rule):
             problem = subject_problem(commit.subject, types)
             if problem is None:
                 continue
+            if is_autosquash(commit.subject):
+                # Local fixups are work in progress until a remote-tracking ref has them.
+                if unpublished is None:
+                    unpublished = set(
+                        git.run_git(
+                            ["rev-list", "HEAD", "--not", "--remotes", "--"], ctx.root
+                        ).split()
+                    )
+                if commit.sha in unpublished:
+                    continue
             yield self.finding(
                 f"Commit {commit.sha[:7]} {problem}: {commit.subject!r}",
                 key=commit.sha,
