@@ -29,9 +29,11 @@ immutable.
 
 ## Release a version
 
-1. Bump `__version__` in `src/pyhyi/__init__.py` and commit.
-2. Prepare patch notes covering user-visible features and fixes, plus any
-   breaking changes and migration steps.
+1. Add a `## X.Y.Z - YYYY-MM-DD` section at the top of `CHANGELOG.md` with the
+   user-visible features and fixes, breaking changes and their migration steps.
+   Preview the release notes with `python scripts/release_notes.py X.Y.Z`.
+2. Bump `__version__` in `src/pyhyi/__init__.py`, update the `rev` and action
+   versions in `docs/integrations.md`, and commit as `chore: release X.Y.Z`.
 3. Make sure CI is green on `main` (the `build` job builds every package).
 4. Tag and push:
 
@@ -40,12 +42,11 @@ immutable.
    git push origin vX.Y.Z
    ```
 
-The `Release` workflow checks that the tag matches `__version__`, builds pyhyi
-and the aliases, and publishes each package in its own job and environment
-`pypi-<package>`. Once all PyPI jobs succeed, it creates a GitHub Release with
-generated release notes for the existing tag. Add the prepared patch notes to
-that GitHub Release. If a job fails, use **Re-run failed jobs** from the Actions
-page.
+The `Release` workflow checks that the tag matches `__version__` and that
+`CHANGELOG.md` has its section, builds pyhyi and the aliases, and publishes
+each package in its own job and environment `pypi-<package>`. Once all PyPI
+jobs succeed, it creates a GitHub Release for the tag with that section as its
+notes. If a job fails, use **Re-run failed jobs** from the Actions page.
 
 ## Trusted publisher settings
 
