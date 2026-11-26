@@ -51,7 +51,7 @@ def test_method_body_and_decorators_resolve_names_in_their_own_scopes():
     tests = _tests(source)
     method = tests["TestChecks.test_errors"]
     assert method.skips == []
-    assert [c.lineno for c in method.exceptions.values() if c.broad_warning()] == [8, 9]
+    assert sorted(c.lineno for c in method.exceptions.values()) == [8, 9]
     assert not tests["TestChecks.test_parameter"].exceptions
 
 

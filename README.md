@@ -231,10 +231,10 @@ pyhyi check --select test-weakening --base origin/main
 ```
 
 The first command reviews current test files, including eligible untracked files.
-It reports unconditional pytest skip decorators, direct `assert True` statements
-and broad exception expectations such as `with self.assertRaises(Exception):`.
-A broad expectation is a review candidate even when the test makes other checks.
-Each finding is advice and on its own leaves the exit code at 0.
+It reports unconditional pytest skip decorators and direct `assert True`
+statements. For broad expectations such as `with pytest.raises(Exception):`,
+enable Ruff's B017 and PT011. Each finding is advice and on its own leaves the
+exit code at 0.
 
 The second command compares changed tracked files in the worktree with the
 merge base of `origin/main` and `HEAD`. On a clean PR checkout this covers the

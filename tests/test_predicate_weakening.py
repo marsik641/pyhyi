@@ -111,7 +111,8 @@ def test_real_assertions_still_execute(repo, capsys):
     assert all(f["severity"] == "advice" and f["line"] > 0 for f in found)
     assert sum("new check accepts" in f["message"] for f in found) == 5
     assert sum("removed the check" in f["message"] for f in found) == 1
-    assert len(check(repo, capsys)) == 1
+    # The snapshot leaves the broad assertRaises(Exception) to Ruff B017.
+    assert check(repo, capsys) == []
 
 
 def test_context_changes_are_not_comparison_evidence(repo, capsys):
@@ -145,7 +146,7 @@ def test_context_changes_are_not_comparison_evidence(repo, capsys):
         .replace("fn(1)", "fn(2)"),
     )
     assert check(repo, capsys, base=True) == []
-    assert len(check(repo, capsys)) == 1
+    assert check(repo, capsys) == []
 
 
 def test_combined_assertions_and_failure_context(repo, capsys):

@@ -726,21 +726,8 @@ class TestWeakening(Rule):
     def observations(
         self, path: str, name: str, test: _Test, prior: _Test | None = None
     ) -> Iterator[Finding]:
-        if prior is None:
-            for stmt, context in test.exceptions.items():
-                warning = context.broad_warning()
-                if warning:
-                    try:
-                        key = sha256(_predicate_text(stmt).encode()).hexdigest()
-                    except RecursionError:
-                        key = warning
-                    yield self.finding(
-                        f"{name}: {warning}",
-                        path=path,
-                        line=context.lineno,
-                        key=f"{name}:broad:{key}",
-                    )
-        elif test.signature == prior.signature:
+        # Broad expectations in a snapshot are Ruff B017/PT011; only a comparison adds evidence.
+        if prior is not None and test.signature == prior.signature:
             try:
                 changes = list(_changed_checks(prior.body, test.body, prior, test))
             except RecursionError:

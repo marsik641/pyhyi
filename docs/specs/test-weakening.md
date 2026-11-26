@@ -28,8 +28,8 @@ In snapshot mode describe the construct in present tense. In comparison mode nam
 
 ## Partial loss of a check
 
-The snapshot reports an unrestricted expectation of `Exception` or
-`BaseException` as a review candidate. In a comparison, the old and new tests
+The snapshot leaves an unrestricted expectation of `Exception` or
+`BaseException` to Ruff B017 and PT011. In a comparison, the old and new tests
 provide evidence of change. Match the same test signature and protected
 operation before reporting a broadened exception type or removed message
 constraint. Give an exception type or message that distinguishes the two.
@@ -67,7 +67,7 @@ removed statement at its surviving location without claiming a suite-wide loss.
 | Exact amount 120 changes to any positive amount, or an allowed set gains a status code | Report a concrete newly accepted value |
 | The expected amount changes from 120 to 100, a bound tightens, or reordered checks become jointly stricter | Zero widening findings |
 | The protected operation stays the same and its expected exception changes from ValueError to Exception | Identify the widened type and a newly admitted exception |
-| An existing context accepts any Exception without checking its cause | Snapshot advice, with no historical claim |
+| An existing context accepts any Exception without checking its cause | No finding; Ruff B017 and PT011 cover it |
 | An existing skip decorator changes spelling, or the module rebinds the imported marker | Avoid reporting a newly added unconditional skip when the previous state or marker identity is ambiguous |
 | Git rename across an excluded path | Skip the pair before accessing the old blob |
 | An unrelated plugin raises a configuration error inside its check | Preserve the engine's existing JSON error and continue running other selected rules |
@@ -75,7 +75,7 @@ removed statement at its surviving location without claiming a suite-wide loss.
 
 ## Boundaries and rollback
 
-The broad-exception snapshot overlaps with Ruff B017. Comparisons add evidence
+Broad exceptions in a snapshot are left to Ruff B017 and PT011. Comparisons add evidence
 from the base revision. General equivalence of arbitrary Python programs,
 mutation testing, class-wide skip inference, custom collection, and documentation
 rules are outside this rule. Disable the rule through selection or ignore.

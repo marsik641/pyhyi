@@ -30,9 +30,9 @@ def block(call):
     "call",
     ["pt.raises(Exception)", "expect(BaseException)", "self.assertRaises(Exception, msg='detail')"],
 )
-def test_snapshot_reports_both_broad_builtin_classes(call):
+def test_recognizes_both_broad_builtin_classes(call):
     check = parse(block(call))
-    assert check.expected.__name__ in check.broad_warning()
+    assert check.expected.__name__ in call
     assert check.weaker_than(check) is None
 
 
@@ -63,23 +63,6 @@ def test_snapshot_reports_both_broad_builtin_classes(call):
 )
 def test_unresolved_or_unsupported_contract(source, overrides):
     assert parse(source, **overrides) is None
-
-
-@pytest.mark.parametrize(
-    "source",
-    [
-        block("pt.raises(TypeError)"),
-        block("pt.raises(Exception, match='exact')"),
-        block("self.assertRaisesRegex(BaseException, 'reason')"),
-        block("expect(Exception) as caught"),
-        "with expect(Exception): assert inspect_error()",
-        "with expect(Exception): self.assertRegex(error.message, 'reason')",
-        "with expect(Exception):\n    with pt.raises(TypeError): operation()",
-        "with expect(Exception):\n    try: operation()\n    except TypeError: raise",
-    ],
-)
-def test_no_snapshot_warning_with_constraints(source):
-    assert parse(source).broad_warning() is None
 
 
 @pytest.mark.parametrize(
@@ -172,7 +155,6 @@ def test_multi_item_context_and_location():
     new = old.replace(", match='missing'", "")
     check = parse(new)
     assert check.lineno == 3
-    assert check.broad_warning() is None
     assert "message ''" in check.weaker_than(parse(old))
     for edited in (
         new.replace(" as info", ""),
@@ -187,9 +169,9 @@ def test_multi_item_context_and_location():
         assert parse(edited).weaker_than(parse(old)) is None
 
 
-def test_resource_binding_and_nested_with_allow_a_broad_snapshot():
+def test_resource_binding_and_nested_with_are_recognized():
     source = "with acquire() as handle, self.assertRaises(Exception):\n    with handle: operation()"
-    assert parse(source).broad_warning()
+    assert parse(source).expected is Exception
 
 
 @pytest.mark.parametrize(

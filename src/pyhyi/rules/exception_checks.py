@@ -56,16 +56,6 @@ class ExceptionCheck:
     expected: type[BaseException]
     pattern: str | None
     context: tuple[str, ...]
-    snapshot_eligible: bool
-
-    def broad_warning(self) -> str | None:
-        if (
-            self.snapshot_eligible
-            and self.expected in (Exception, BaseException)
-            and not self.pattern
-        ):
-            return f"expects {self.expected.__name__} without a narrower type or message check"
-        return None
 
     def weaker_than(self, old: ExceptionCheck) -> str | None:
         """Describe an outcome admitted by this expectation and rejected by the old one."""
@@ -125,7 +115,6 @@ def exception_check(
 ) -> ExceptionCheck | None:
     """Inspect one with statement or direct callable assertion using caller-resolved names."""
     parts: list[ast.AST | str] = []
-    eligible = True
     if isinstance(stmt, ast.With):
         candidates = []
         for item in stmt.items:
@@ -140,7 +129,6 @@ def exception_check(
                 parts.append("expectation")
                 if item.optional_vars is not None:
                     parts.append(item.optional_vars)
-                    eligible = False
             else:
                 parts.append(item)
         if len(candidates) != 1:
@@ -148,17 +136,6 @@ def exception_check(
         call, method = candidates[0]
         parts.append("body")
         parts.extend(stmt.body)
-        for child in stmt.body:
-            for node in ast.walk(child):
-                if isinstance(node, (ast.Assert, ast.ExceptHandler, ast.Raise)):
-                    eligible = False
-                if isinstance(node, ast.Call) and (
-                    _method(node, pytest_names, raises_names, unittest_methods)
-                    or (
-                        isinstance(node.func, ast.Attribute) and node.func.attr.startswith("assert")
-                    )
-                ):
-                    eligible = False
     elif isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
         call = stmt.value
         method = _method(call, pytest_names, raises_names, unittest_methods)
@@ -206,4 +183,4 @@ def exception_check(
         context = tuple(part if isinstance(part, str) else ast.dump(part) for part in parts)
     except RecursionError:
         return None
-    return ExceptionCheck(call.lineno, framework, expected, pattern, context, eligible)
+    return ExceptionCheck(call.lineno, framework, expected, pattern, context)
