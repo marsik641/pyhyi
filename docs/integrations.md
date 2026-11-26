@@ -63,7 +63,7 @@ install them with `pre-commit install -t pre-commit -t commit-msg`:
 ```yaml
 repos:
   - repo: https://github.com/marsik641/pyhyi
-    rev: v0.3.1
+    rev: v0.4.0
     hooks:
       - id: pyhyi
       - id: pyhyi-commit-msg
@@ -77,7 +77,7 @@ steps:
   - uses: actions/checkout@v7
     with:
       fetch-depth: 0
-  - uses: marsik641/pyhyi@v0.3.1
+  - uses: marsik641/pyhyi@v0.4.0
 ```
 
 ## pytest plugin
