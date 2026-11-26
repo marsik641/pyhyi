@@ -356,6 +356,22 @@ def test_stale_todo_rule(repo: GitRepo, monkeypatch: pytest.MonkeyPatch) -> None
     assert found(only_fixme) == [("README.md", 2)]
 
 
+def test_stale_todo_skips_strings_and_unknown_types(
+    repo: GitRepo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GIT_AUTHOR_DATE", OLD_DATE)
+    repo.commit(
+        "docs: plans",
+        {
+            "run.sh": '#!/bin/sh\necho "progress: # TODO items"\nexit 0  # TODO: real\n',
+            "src/app.js": 'const help = "usage // TODO is literal";\n',
+            "docs/plan.rst": "Plan\n====\n\n* TODO: describe the migration\n",
+            "notes.org": "* TODO write the checklist\n",
+        },
+    )
+    assert found(run_rule(repo, "stale-todo")) == [("run.sh", 3)]
+
+
 def test_stale_todo_negative_age(repo: GitRepo) -> None:
     repo.commit("chore: x")
     with pytest.raises(ConfigError, match="max-age-days"):
