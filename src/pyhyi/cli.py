@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import os
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import replace
@@ -192,17 +193,24 @@ COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
 }
 
 
-def _tolerant_streams() -> None:
-    # Never crash on characters the console encoding cannot represent.
+def _configure_streams() -> None:
+    # Git, CI and pre-commit read the output as UTF-8, but Python on Windows writes
+    # pipes in the ANSI code page, and the hooks run with -I, which ignores
+    # PYTHONUTF8. An explicit PYTHONIOENCODING still wins.
+    explicit = (
+        not sys.flags.ignore_environment
+        and os.environ.get("PYTHONIOENCODING", "").partition(":")[0].strip()
+    )
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is not None:
             with contextlib.suppress(ValueError, OSError):
-                reconfigure(errors="replace")
+                # Never crash on characters the stream cannot represent.
+                reconfigure(encoding=None if explicit else "utf-8", errors="replace")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    _tolerant_streams()
+    _configure_streams()
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.command is None:

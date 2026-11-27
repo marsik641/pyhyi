@@ -37,6 +37,20 @@ def test_commit_uses_the_index_prepared_by_git(repo):
     assert repo.git("show", "HEAD:pyhyi.toml") == MAP
 
 
+def test_hook_output_is_utf8_whatever_the_locale(repo):
+    # Without care, Python on Windows writes the pipe in the ANSI code page.
+    assert main(["install-hooks", str(repo.root)]) == 0
+    subject = "Добавил файл"
+    blocked = subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", subject],
+        cwd=repo.root,
+        capture_output=True,
+        check=False,
+    )
+    assert blocked.returncode != 0
+    assert f"'{subject}'".encode() in blocked.stderr
+
+
 def test_initial_commit_accepts_an_alternative_and_rejects_an_empty_note(repo):
     assert main(["install-hooks", str(repo.root)]) == 0
     repo.write(CONFIG, MAP)

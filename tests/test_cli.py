@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 import sys
@@ -124,6 +125,22 @@ def test_not_a_repo(tmp_path: Path, git_env: None, capsys: pytest.CaptureFixture
 def test_missing_path(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["check", "definitely/not/here"]) == 2
     assert "path does not exist" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("io_encoding", "expected"),
+    [("", "нет/такой/папки".encode()), ("cp1252:strict", b"???/?????/?????")],
+    ids=["default", "explicit"],
+)
+def test_output_is_utf8_unless_pythonioencoding_says_otherwise(
+    monkeypatch: pytest.MonkeyPatch, io_encoding: str, expected: bytes
+) -> None:
+    stream = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+    monkeypatch.setattr(sys, "stderr", stream)
+    monkeypatch.setenv("PYTHONIOENCODING", io_encoding)
+    assert main(["check", "нет/такой/папки"]) == 2
+    stream.flush()
+    assert expected in stream.buffer.getvalue()
 
 
 def test_rules_lists_builtins(capsys: pytest.CaptureFixture[str]) -> None:
